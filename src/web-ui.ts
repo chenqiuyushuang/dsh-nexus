@@ -416,16 +416,16 @@ import { fileURLToPath } from 'node:url'
 let shellCache: string | undefined
 
 /**
- * Serve the standalone /nexus panel: prefer the packaged web/nexus.html (kept
- * outside the bundle so its inline JS never fights the build), fall back to a
- * minimal inline shell when the file is missing (dev checkouts).
+ * Serve the standalone /nexus panel.
+ *
+ * 单一实现：只认构建产物 lib/nexus.html。历史上还有一个手写的 web/nexus.html 回退项，
+ * 后果是「万一产物缺失就渲染六天前的另一套界面」——已删除（包体门禁 check:pack 会拦住再次引入）。
+ * 产物缺失时返回下面的内联说明页（诚实告知 + 给出 API 入口），而不是另一套 UI。
  */
 function renderShell(): string {
   if (shellCache !== undefined) return shellCache
   const here = dirname(fileURLToPath(import.meta.url))
-  // Build 产物（lib/nexus.html，内联 token CSS + React bundle）优先；源码模板
-  // （web/nexus.html）与内联降级面板依次回退。
-  for (const file of ['../lib/nexus.html', '../web/nexus.html']) {
+  for (const file of ['../lib/nexus.html']) {
     try {
       shellCache = readFileSync(join(here, file), 'utf8')
       return shellCache

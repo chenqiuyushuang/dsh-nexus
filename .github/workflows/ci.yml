@@ -18,3 +18,7 @@ jobs:
         run: npm test
       - name: build (lib/index.js + lib/client.js + panel)
         run: npm run build
+      # 包体门禁：内容与当前构建逐字节一致、无源码/测试/截图泄露、无构建中间产物、体积上限
+      # （file: tarball 是本插件的实际分发方式，踩过「同名同版本 pnpm 不更新」与「包体过期」两个坑）
+      - name: check package contents
+        run: npm run check:pack
