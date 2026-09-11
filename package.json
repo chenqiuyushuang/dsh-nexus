@@ -1,7 +1,7 @@
 {
   "name": "@chenqiuyushuang/dsh-nexus",
   "description": "Nexus — a zero-config, cost-protected memory layer for DeepSeek Harness",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "keywords": [
     "dsh-plugin",
     "dsh",

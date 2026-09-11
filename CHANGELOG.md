@@ -12,6 +12,11 @@
 - `/nexus/api/memory/update` 支持 `projectRef`（指派或清除项目归属）
 - 测试：`injection-truth` 单元 5 例 + 路由级 2 例 + 面板渲染 2 例；全套 222 通过 + 5 xfail
 
+### 安装摩擦修复：别再删掉用户 profile 正在引用的 tarball
+- 现象：用户仍停在 0.4.3，而他的 profile 依赖指向 `dsh-nexus-0.4.3.tgz` —— 那个文件在升版本时被我删了。后果：**他直接 `add` 新版会失败**（pnpm 先解析旧依赖），必须额外走 `remove`。一个会话发 12 个版本、每次删旧包，是我把安装流程变复杂的
+- 修复 1：从 git 历史（`d602a0d`）重建 `dsh-nexus-0.4.3.tgz`，让 profile 里那条依赖重新可解析 → 用户更新只需 `add`，不必 `remove`
+- 修复 2：`npm run verify:install` 新增陷阱自诊断 —— 检查 profile 的 `file:` 依赖指向的文件是否存在，不存在就明确提示「先 remove 再 add」
+- 流程规则（今后遵守）：**保留用户 profile 当前引用的那个 tarball**，新版本另存新名，不删旧包
 ### README 重写（对齐 0.5.x 的真实能力与默认值）
 - 旧 README 有多个重复的安装章节、还在教 `github:` 安装、把待决策的向量检索当卖点、并引用了已删除的 `web/nexus.html`
 - 新版：三条安装路径（本机 tarball / GitHub / npm）+ **两个已踩过的坑**（版本号不变 pnpm 不更新、插件代码与面板在启动时读入内存）+ 校验命令

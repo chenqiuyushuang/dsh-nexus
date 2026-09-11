@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto'
 import { readFileSync, existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
@@ -25,6 +25,25 @@ if (!existsSync(installedDir)) {
 
 const installed = JSON.parse(readFileSync(join(installedDir, 'package.json'), 'utf8'))
 let ok = true
+
+// 陷阱自诊断：profile 里 file: 依赖指向的 tarball 是否存在。
+// 若不存在，下一次 dsh plugin add 会直接失败（pnpm 解析不了旧依赖），必须先 remove 再 add。
+// installedDir = <profile>/node_modules/@scope/name → 上溯三层到 profile 根
+const profilePkgPath = join(dirname(dirname(dirname(installedDir))), 'package.json')
+try {
+  const profile = JSON.parse(readFileSync(profilePkgPath, 'utf8'))
+  const spec = profile.dependencies?.[local.name]
+  if (typeof spec === 'string' && spec.startsWith('file:')) {
+    const target = spec.slice('file:'.length)
+    if (!existsSync(target)) {
+      ok = false
+      console.log('  ❌ profile 依赖指向的文件不存在：' + target)
+      console.log('     → 直接 add 会失败；先执行：dsh plugin --profile web remove ' + local.name)
+    } else {
+      console.log('  ✅ profile 依赖可解析（' + spec.split('/').pop() + '）')
+    }
+  }
+} catch { /* profile 不可读时跳过这项检查 */ }
 console.log('本地构建版本: ' + local.version)
 console.log('已安装版本  : ' + installed.version + (installed.version === local.version ? '  ✅' : '  ❌ 与本地不一致'))
 if (installed.version !== local.version) ok = false
