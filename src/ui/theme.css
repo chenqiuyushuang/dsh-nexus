@@ -362,6 +362,11 @@ html.embedded .nx-sub { display: none; }
 /* 读屏专用文本（视觉隐藏，读屏可读） */
 .nx-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
+/* 隐藏（嵌入态把计数并进注入条，省掉一整行） */
+.nx-hidden { display: none; }
+/* 状态条里内联的计数（暗色下用次级色，别跟注入数字抢注意力） */
+.nx-status-counts { flex: none; font-size: 11.5px; color: var(--nx-text-tertiary); white-space: nowrap; }
+
 /* 条数少时的作用域摘要（替掉那条 26px 的粗彩条） */
 .nx-scopeline { margin: 0 0 8px; font-size: 12px; color: var(--nx-text-tertiary); }
 

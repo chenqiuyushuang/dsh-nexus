@@ -361,6 +361,18 @@ export function NexusPanel(): React.ReactNode {
         ...(state.degraded ? [['注入已降级', 'yes', 'warn'] as [string, string | number, string | undefined]] : []),
       ]
 
+  // 嵌入窄栏（设置弹窗）里顶部只留一条状态条：摘要行与 chips 并入注入条，细节移进展开区。
+  // 指标依据：此前「摘要 2 行 + 注入条 2 行 + chips 1 行」共 5 行数字占掉约 110px，而记忆只有 4 条。
+  const embedded = typeof document !== 'undefined' && document.documentElement.classList.contains('embedded')
+  const detailParts: string[] = []
+  if (state !== null) {
+    detailParts.push('在用 ' + String(state.active) + ' 条' + (state.byScope !== undefined
+      ? '（跨项目 ' + String(state.byScope.user) + ' · 本项目 ' + String(state.byScope.project) + (state.byScope.episode > 0 ? ' · 本会话 ' + String(state.byScope.episode) : '') + '）'
+      : ''))
+    if (state.today !== undefined) detailParts.push(state.today.line)
+  }
+  const detailLine = detailParts.join(' · ')
+
   return (
     <div className="nx-app">
       <header className="nx-header">
@@ -372,7 +384,7 @@ export function NexusPanel(): React.ReactNode {
       </header>
 
       {state !== null && state.active >= 20 && <ScopeBar counts={state.byScope} />}
-      {state !== null && (
+      {state !== null && !embedded && (
         <div className="nx-scopeline">
           {[
             state.active < 20
@@ -394,6 +406,8 @@ export function NexusPanel(): React.ReactNode {
           truth={state.injection}
           projects={state.projects ?? []}
           project={state.project ?? project}
+          counts={{ active: state.active, pending: state.pending, conflicts: state.conflicts }}
+          detail={detailLine}
           {...injectionActions}
         />
       )}
@@ -411,7 +425,7 @@ export function NexusPanel(): React.ReactNode {
         <div className="nx-banner">近 7 天未使用记忆注入，已自动降级为「不注入」（节省 token）。继续使用后会逐步恢复。</div>
       )}
 
-      <div className="nx-stats">
+      <div className={embedded ? 'nx-stats nx-hidden' : 'nx-stats'}>
         {chips.length === 0 ? <span className="nx-chip">加载中…</span> : chips.map(([label, value, tone]) => (
           <Chip key={label} label={label} value={value} tone={tone} />
         ))}

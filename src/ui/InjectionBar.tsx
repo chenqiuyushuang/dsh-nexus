@@ -55,7 +55,7 @@ function estimateLineBytes(entry: InjectionEntryView, statement: string): number
   return new TextEncoder().encode(line).length
 }
 
-export function InjectionBar({ truth, projects, project, onProject, onPin, onAssign, onScope, onSave, onLoad, onConfirm, defaultOpen }: {
+export function InjectionBar({ truth, projects, project, counts, detail, onProject, onPin, onAssign, onScope, onSave, onLoad, onConfirm, defaultOpen }: {
   /** 初始展开（测试与深链用）。 */
   defaultOpen?: boolean
   truth?: InjectionTruthView
@@ -69,6 +69,10 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
   /** 取全文（列表里的 statement 是预览；缩短前必须换成全文，否则一编辑就截断）。 */
   onLoad?: (id: string) => Promise<string>
   onConfirm: (id: string) => void
+  /** 合并进状态条的计数（窄栏里省掉一整行 chips）。 */
+  counts?: { active: number; pending: number; conflicts: number }
+  /** 摘要行（在用 N 条 / 跨项目分布 / 今日流量）：窄栏里移进展开区，别在顶部堆三层数字。 */
+  detail?: string
 }): ReactNode {
   const [open, setOpen] = useState(defaultOpen === true)
   const [editId, setEditId] = useState<string | null>(null)
@@ -151,11 +155,15 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
         <span className="nx-dim">/ {truth.budgetBytes} B</span>
         {truth.pinned > 0 && <Tag text={'置顶 ' + truth.pinned} />}
         <span className={truth.dropped.length > 0 ? 'nx-inject-badge warn' : 'nx-inject-badge'}>未进入 {truth.dropped.length}</span>
+        {counts !== undefined && (
+          <span className="nx-status-counts">在用 {counts.active} · 待确认 {counts.pending} · 冲突 {counts.conflicts}</span>
+        )}
         {(truth.archived ?? 0) > 0 && <span className="nx-inject-badge">已归档 {truth.archived}</span>}
         <span className="nx-inject-caret" aria-hidden="true">{open ? '收起' : '为什么'}</span>
       </button>
       {open && (
         <div className="nx-inject-body">
+          {detail !== undefined && detail !== '' && <div className="nx-inject-note">{detail}</div>}
           <div className="nx-inject-note">
             这是「此刻新开一个会话」会注入的真实内容：声明 + {truth.lines} 条记忆，共 {truth.textBytes} B。
             同一会话内只在首轮、内容变化或超过刷新间隔时才重新注入。
