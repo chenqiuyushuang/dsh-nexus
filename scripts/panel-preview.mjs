@@ -13,10 +13,14 @@ function arg(name, fallback) { const i = process.argv.indexOf('--' + name); retu
 const width = Number(arg('width', '372'))
 const height = Number(arg('height', '460'))
 const out = arg('out', '_shots/embedded.png')
+const font = arg('font', '14')
+const dark = process.argv.includes('--dark')
 const chrome = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const html = readFileSync(fileURLToPath(new URL('../lib/nexus.html', import.meta.url)), 'utf8')
-const harness = '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#111}iframe{border:0;display:block}</style></head><body>' +
+const harness = '<!doctype html><html><head><meta charset="utf-8"><style>html{font-size:' + font + 'px}html,body{margin:0;background:#111}iframe{border:0;display:block}</style></head><body>' +
   '<iframe id="f" src="/nexus" style="width:' + String(width) + 'px;height:' + String(height) + 'px"></iframe></body></html>'
+// 宿主主题属性：面板在嵌入态跟随宿主的 data-ds-dark-theme（B7），测试宿主必须给上
+const themedHarness = dark ? harness.replace('<body>', '<body data-ds-dark-theme>') : harness
 const port = Number(arg('port', '9336'))
 const profile = fileURLToPath(new URL('../_shots/chrome-profile/', import.meta.url))
 mkdirSync(dirname(fileURLToPath(new URL('../' + out, import.meta.url))), { recursive: true })
@@ -43,7 +47,7 @@ listeners.push((msg) => {
   const { requestId, request } = msg.params
   const url = request.url
   if (/\/harness$/.test(url)) {
-    void send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'content-type', value: 'text/html; charset=utf-8' }], body: Buffer.from(harness, 'utf8').toString('base64') })
+    void send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'content-type', value: 'text/html; charset=utf-8' }], body: Buffer.from(themedHarness, 'utf8').toString('base64') })
   } else if (/\/nexus$/.test(url)) {
     void send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'content-type', value: 'text/html; charset=utf-8' }], body: Buffer.from(html, 'utf8').toString('base64') })
   } else {
@@ -53,6 +57,7 @@ listeners.push((msg) => {
 
 try {
   await send('Page.enable')
+  if (dark) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] })
   await send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
   await send('Page.navigate', { url: 'http://127.0.0.1:3080/harness' })
   await new Promise((r) => setTimeout(r, 5000))
