@@ -12,6 +12,12 @@
 - `/nexus/api/memory/update` 支持 `projectRef`（指派或清除项目归属）
 - 测试：`injection-truth` 单元 5 例 + 路由级 2 例 + 面板渲染 2 例；全套 222 通过 + 5 xfail
 
+### `/memory doctor` 自检（回答「它到底在不在正常工作」）
+- 动机：专家团（可解释性/产品）反复指出，用户的第一个问题不是功能不够，而是**不知道它有没有在工作**
+- 新增 `src/doctor.ts`（纯函数 `diagnose`）+ `/memory doctor`：一次给出库计数、待裁决冲突、注入占用与未进入数、LLM 提炼开关、降级状态、价值门影子计数，并给一句结论
+- 分级：不可写 = ✖ bad；垃圾/冲突/零活跃/零注入/降级 = ⚠ warn；其余 · info
+- 测试：doctor 4 例（正常/不可写/多项异常/影子计数仅在有时显示）；全套 315 通过 + 5 xfail
+- 附 `scripts/doctor-preview.mjs`：用线上真实库数据预演 doctor 输出
 ### 功能面审计 + 删除真·死字段
 - 核对专家团「删除清单」的真实影响面：`atom.embedding` 是真死字段（无读写、磁盘无记录、schema 非 strict）→ 已删；`vector`/`integrator`/`skill-compiler` 都**仍可触发**（配置项或 `/memory` 命令），属于「砍功能」而非清死代码 → 影响面写入 docs/V0.9-SURFACE-AUDIT.md 待决策
 - 证据：`~/.dsh/nexus/` 无 `skills.draft/`（skill-compile 从未运行）、配置里无 vector/integrator、三个模块合计 288 行零测试覆盖

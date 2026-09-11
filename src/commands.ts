@@ -14,10 +14,15 @@ import { compileSkills, SKILL_MIN_WEIGHT } from './skill-compiler.ts'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { renderIndexLine } from './atom.ts'
+import { projectRefOf } from './scheduler.ts'
 import type { SessionModeControl } from './scheduler.ts'
+import { injectionTruth } from './injection-truth.ts'
+import { collectNoise } from './noise.ts'
+import { summarizeToday } from './today.ts'
+import { diagnose } from './doctor.ts'
 import type { ResolvedConfig } from './config.ts'
 
-const USAGE = '/memory list|search <q>|show <id>|confirm <id...>|reject <id...> [原因]|conflict [--all]|cost|session [read-write|write-only|pause]'
+const USAGE = '/memory list|search <q>|show <id>|confirm <id...>|reject <id...> [原因]|conflict [--all]|cost|doctor|session [read-write|write-only|pause]'
 
 /** Install the slash command family. */
 async function pendingIds(facility: NexusFacility): Promise<string[]> {
@@ -131,6 +136,40 @@ export function installCommands(ctx: Context, facility: NexusFacility, modes: Se
               }
             }
             return { kind: 'success', text: '已归档 ' + purged + ' 条垃圾记忆' }
+          }
+          case 'doctor': {
+            // 自检：一次回答「它到底在不在正常工作」（纯逻辑在 src/doctor.ts，这里只负责取数）
+            const store = await facility.store();
+            const atoms = [...store.atomEntries()].map(([, atom]) => atom);
+            const activeAtoms = atoms.filter(atom => atom.status === 'active');
+            const truth = injectionTruth(atoms, {
+              budgetBytes: resolved.indexBudgetBytes,
+              projectRef: projectRefOf(invocation.agent.session),
+              conflicted: atoms.filter(atom => atom.status === 'needs-review').length,
+            });
+            const today = summarizeToday({
+              atoms: atoms.map(atom => ({ createdAt: atom.createdAt, status: atom.status })),
+              rejects: [...store.rejectEntries()].map(([, record]) => ({ at: record.at, source: record.source })),
+              recalls: [...store.recallEntries()].map(([, record]) => ({ at: record.at, injectedBytes: record.injectedBytes ?? 0 })),
+              now: Date.now(),
+            });
+            const report = diagnose({
+              counts: {
+                active: activeAtoms.length,
+                pending: atoms.filter(atom => atom.status === 'pending').length,
+                conflicts: atoms.filter(atom => atom.status === 'needs-review').length,
+                archived: atoms.filter(atom => atom.status === 'archived').length,
+                superseded: atoms.filter(atom => atom.status === 'superseded').length,
+              },
+              junk: collectNoise(activeAtoms).count,
+              injection: { bytes: truth.bytes, budgetBytes: truth.budgetBytes, lines: truth.lines, dropped: truth.dropped.length },
+              ...(store.getState().valueGateShadow !== undefined ? { valueGate: store.getState().valueGateShadow } : {}),
+              today,
+              extractorLlm: store.getState().extractorLlm !== undefined,
+              degraded: shouldAutoDegrade(store, resolved.autoDegradeDays),
+              storeWritable: true,
+            });
+            return { kind: 'success', text: report.lines.join('\n') };
           }
           case 'cost': {
             const store = await facility.store();
