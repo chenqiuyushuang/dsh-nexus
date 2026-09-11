@@ -210,13 +210,15 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     if (!guardWrite(req, res)) return;
     const body = await readJson(req);
     const ids = Array.isArray(body?.ids) ? body.ids.map(String) : [];
+    // any=true 仅用于「撤销刚做的归档」（5 秒内）——系统归档仍需用户显式确认才可复活
+    const any = body?.any === true;
     const store = await facility.store();
     let restored = 0;
     let skipped = 0;
     for (const id of ids) {
       const atom = store.getAtom(id);
       // 只恢复"用户移入回收站"的条目：系统归档（去重/过期/清理）不因一次点击复活（IA/交互专家共识）
-      if (atom === undefined || atom.status !== "archived" || atom.reviewNote !== "user-deleted") { skipped += 1; continue }
+      if (atom === undefined || atom.status !== "archived" || (!any && atom.reviewNote !== "user-deleted")) { skipped += 1; continue }
       await store.updateAtom(id, current => ({ ...current, status: "active" as const, updatedAt: Date.now(), reviewNote: undefined }));
       // 撤销必须连黑名单一起回滚，否则重提同句会被静默再归档（交互专家实测）
       const sample = atom.statement.slice(0, 500);

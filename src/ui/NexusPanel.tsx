@@ -1,5 +1,5 @@
 /** Nexus 记忆面板：独立 /nexus 页与 DSH 设置面板 iframe 共用的单一实现（React）。 */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Chip, Tag, Btn, Select } from './components.tsx'
 
 interface CostAggregate {
@@ -78,6 +78,10 @@ export function NexusPanel(): React.ReactNode {
   const [editScope, setEditScope] = useState('project')
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [purgeId, setPurgeId] = useState<string | null>(null)
+  // B5 反馈层：底部 toast（成功带 5 秒撤销；失败带原因），取代 window.alert/confirm
+  const [toast, setToast] = useState<{ text: string; error?: boolean; undo?: () => void } | null>(null)
+  const toastTimer = useRef<number | null>(null)
   const [adding, setAdding] = useState(false)
   const [addText, setAddText] = useState('')
   const [addScope, setAddScope] = useState('user')
@@ -131,15 +135,21 @@ export function NexusPanel(): React.ReactNode {
 
   const reload = (): void => { void load(current) }
 
-  const post = async (path: string, body: unknown): Promise<void> => {
-    await j(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const showToast = useCallback((text: string, undo?: () => void, error = false): void => {
+    setToast({ text, ...(undo !== undefined ? { undo } : {}), ...(error ? { error: true } : {}) })
+    if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => { setToast(null) }, 5000)
+  }, [])
+  const post = async (path: string, body: unknown): Promise<unknown> => {
+    const data = await j<unknown>(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
     reload()
+    return data
   }
-  const runAction = async (path: string, body: unknown, label: string): Promise<boolean> => {
-    try { await post(path, body); return true }
-    catch (err) { window.alert(`${label}：${err instanceof Error ? err.message : String(err)}`); return false }
+  const runAction = async (path: string, body: unknown, label: string, undo?: () => void): Promise<boolean> => {
+    try { await post(path, body); showToast(label, undo); return true }
+    catch (err) { showToast(`${label}失败：${err instanceof Error ? err.message : String(err)}`, undefined, true); return false }
   }
-  const confirmOne = (id: string): void => { void runAction('/nexus/api/memory/confirm', { ids: [id] }, '确认失败') }
+  const confirmOne = (id: string): void => { void runAction('/nexus/api/memory/confirm', { ids: [id] }, '已确认 1 条') }
 
   const startEdit = (item: MemoryItem): void => { setEditingId(item.id); setEditText(item.statement); setEditScope(item.scope) }
   const saveEdit = async (id: string): Promise<void> => {
@@ -151,13 +161,16 @@ export function NexusPanel(): React.ReactNode {
 
   const askArchive = (id: string): void => setConfirmingId(id)
   const confirmArchive = async (id: string): Promise<void> => {
-    if (await runAction('/nexus/api/memory/reject', { ids: [id] }, '归档失败')) setConfirmingId(null)
+    // 归档 = 归档 + 黑名单；撤销走 restore(any)，并把黑名单回滚（服务端已实现）
+    if (await runAction('/nexus/api/memory/reject', { ids: [id] }, '已归档 1 条（同句不再自动记住）',
+      () => { void runAction('/nexus/api/memory/restore', { ids: [id], any: true }, '已撤销归档') })) setConfirmingId(null)
   }
   const cancelArchive = (): void => setConfirmingId(null)
 
   const askDelete = (id: string): void => setDeleteId(id)
   const confirmDelete = async (id: string): Promise<void> => {
-    if (await runAction('/nexus/api/memory/delete', { ids: [id] }, '删除失败')) setDeleteId(null)
+    if (await runAction('/nexus/api/memory/delete', { ids: [id] }, '已移入回收站 1 条（可恢复）',
+      () => { void runAction('/nexus/api/memory/restore', { ids: [id] }, '已撤销') })) setDeleteId(null)
   }
   const cancelDelete = (): void => setDeleteId(null)
 
@@ -175,12 +188,14 @@ export function NexusPanel(): React.ReactNode {
   }
   // 置顶：索引块排序第一优先（D3）
   const togglePin = (item: MemoryItem): void => {
-    void runAction('/nexus/api/memory/pin', { id: item.id, pinned: item.pinned !== true }, '置顶失败')
+    const next = item.pinned !== true
+    void runAction('/nexus/api/memory/pin', { id: item.id, pinned: next }, next ? '已置顶' : '已取消置顶',
+      () => { void runAction('/nexus/api/memory/pin', { id: item.id, pinned: !next }, '已撤销') })
   }
   // 彻底清除（仅回收站/归档行）：真删 + 清边，二次确认
-  const purgeOne = (id: string): void => {
-    if (!window.confirm('彻底清除这条记忆？内容会从磁盘移除，无法恢复。')) return
-    void runAction('/nexus/api/memory/purge', { ids: [id] }, '彻底清除失败')
+  // 彻底清除：面板内两步确认（替代 window.confirm），文案写明后果
+  const confirmPurge = async (id: string): Promise<void> => {
+    if (await runAction('/nexus/api/memory/purge', { ids: [id] }, '已彻底清除 1 条（内容、关系边、同句拒绝记录一并删除）')) setPurgeId(null)
   }
 
   const saveSettings = async (): Promise<void> => {
@@ -240,6 +255,15 @@ export function NexusPanel(): React.ReactNode {
 
   return (
     <div className="nx-app">
+      {toast !== null && (
+        <div className={toast.error === true ? 'nx-toast error' : 'nx-toast'} role="status" aria-live="polite">
+          <span className="nx-toast-text">{toast.text}</span>
+          {toast.undo !== undefined && (
+            <button onClick={() => { const undo = toast.undo; setToast(null); undo?.() }}>撤销</button>
+          )}
+          <button onClick={() => setToast(null)}>关闭</button>
+        </div>
+      )}
       <header className="nx-header">
         <div>
           <h1 className="nx-title">记忆</h1>
@@ -394,7 +418,11 @@ export function NexusPanel(): React.ReactNode {
                 )}
                 <Btn onClick={() => togglePin(item)}>{item.pinned === true ? '取消置顶' : '置顶'}</Btn>
                 {item.status === 'archived'
-                  ? <><Btn onClick={() => restoreOne(item.id)}>恢复</Btn><Btn kind="danger" onClick={() => purgeOne(item.id)}>彻底清除</Btn></>
+                  ? (item.reviewNote === 'user-deleted'
+                      ? (purgeId === item.id
+                          ? <><Btn kind="danger" onClick={() => void confirmPurge(item.id)}>确认彻底清除</Btn><Btn onClick={() => setPurgeId(null)}>取消</Btn></>
+                          : <><Btn onClick={() => restoreOne(item.id)}>恢复</Btn><Btn kind="danger" onClick={() => setPurgeId(item.id)}>彻底清除</Btn></>)
+                      : <span className="nx-hint">系统归档（不可彻底清除）</span>)
                   : null}
                 <Btn onClick={() => toggleNeighbors(item.id)}>{openIds.has(item.id) ? '收起' : '关系'}</Btn>
                 {deleteId === item.id

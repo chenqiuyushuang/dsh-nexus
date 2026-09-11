@@ -44,8 +44,9 @@ function MemorySection(): ReturnType<typeof createElement> {
     title: 'Nexus 记忆面板',
     style: {
       width: '100%',
-      height: height > 0 ? height : 480,
+      height: height > 0 ? Math.min(height, 620) : 480,
       minHeight: 480,
+      maxHeight: 620,
       border: 'none',
       borderRadius: 0,
       display: 'block',
