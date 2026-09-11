@@ -21,6 +21,8 @@ interface NexusState {
   cost: { inject: CostAggregate; extract: CostAggregate }
   /** B7：作用域计数（用户/项目/会话）。 */
   byScope?: ScopeCounts
+  /** P0：子代理噪音（子代理提示词被写入的记忆）。 */
+  noise?: { count: number; ids: string[] }
   /** B4：默认查看的项目 + 可选项目清单 + 注入真相。 */
   project?: string
   projects?: ProjectRefView[]
@@ -102,6 +104,7 @@ export function NexusPanel(): React.ReactNode {
   // B3 批量选择（复用 ids[] 路由）；行内的编辑/二次确认状态已收进 MemoryRow
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchConfirm, setBatchConfirm] = useState<'archive' | 'trash' | null>(null)
+  const [noiseConfirm, setNoiseConfirm] = useState(false)
   // B5 反馈层：底部 toast（成功带 5 秒撤销；失败带原因），取代 window.alert/confirm
   const [toast, setToast] = useState<{ text: string; error?: boolean; undo?: () => void } | null>(null)
   const toastTimer = useRef<number | null>(null)
@@ -226,6 +229,14 @@ export function NexusPanel(): React.ReactNode {
     setSelected((prev) => { const copy = new Set(prev); if (next) copy.add(id); else copy.delete(id); return copy })
   }
   const clearSelection = (): void => { setSelected(new Set()); setBatchConfirm(null) }
+  // P0 子代理噪音清理：归档 + 黑名单（同句不再复活），5 秒内可撤销
+  const cleanNoise = (): void => {
+    const ids = state?.noise?.ids ?? []
+    if (ids.length === 0) return
+    void runAction('/nexus/api/memory/reject', { ids }, '已归档 ' + String(ids.length) + ' 条子代理噪音',
+      () => { void runAction('/nexus/api/memory/restore', { ids, any: true }, '已恢复噪音条目') })
+    setNoiseConfirm(false)
+  }
   const selectPage = (): void => { setSelected(new Set(items.map((item) => item.id))); setBatchConfirm(null) }
   const selectedIds = [...selected]
   const runBatch = async (path: string, label: string, undo?: () => void): Promise<void> => {
@@ -361,6 +372,15 @@ export function NexusPanel(): React.ReactNode {
         />
       )}
 
+      {state?.noise !== undefined && state.noise.count > 0 && (
+        <div className="nx-banner noise" role="status">
+          <span>检测到 <b>{state.noise.count}</b> 条子代理噪音（子代理提示词被写进了记忆，会挤占 1KB 注入预算）。</span>
+          {noiseConfirm
+            ? <><Btn kind="danger" onClick={cleanNoise}>确认归档 {state.noise.count} 条</Btn><Btn onClick={() => setNoiseConfirm(false)}>取消</Btn></>
+            : <Btn onClick={() => setNoiseConfirm(true)}>一键清理</Btn>}
+        </div>
+      )}
+
       {state?.degraded === true && (
         <div className="nx-banner">近 7 天未使用记忆注入，已自动降级为「不注入」（节省 token）。继续使用后会逐步恢复。</div>
       )}
@@ -414,13 +434,11 @@ export function NexusPanel(): React.ReactNode {
         ]} />
         <Btn onClick={reload}>刷新</Btn>
         <Btn kind="primary" onClick={startAdd}>新增</Btn>
+        <Btn onClick={() => setShowDecisions(!showDecisions)}>{showDecisions ? '收起决策日志' : '决策日志'}</Btn>
         <span className="nx-count" role="status" aria-live="polite">显示 {items.length} / 共 {total} 条</span>
         {items.length > 0 && <Btn onClick={selectPage}>全选本页</Btn>}
       </div>
       <div className="nx-decisions">
-        <div className="nx-actions">
-          <Btn onClick={() => setShowDecisions(!showDecisions)}>{showDecisions ? '收起决策日志' : '决策日志（为什么没记）'}</Btn>
-        </div>
         {showDecisions && (
           <div className="nx-row">
             {decisions?.lastSummary !== undefined && (
@@ -507,7 +525,7 @@ export function NexusPanel(): React.ReactNode {
             />
           ))}
         {items.length > 0 && items.length < total && (
-          <div className="nx-more">
+          <div className="nx-loadmore">
             <Btn disabled={loadingMore} onClick={() => void loadMore()}>
               {loadingMore ? '加载中…' : '加载更多（还有 ' + String(total - items.length) + ' 条）'}
             </Btn>

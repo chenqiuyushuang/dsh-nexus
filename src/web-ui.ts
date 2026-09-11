@@ -15,6 +15,7 @@ import { neighborsOf } from './edges.ts'
 import { DEFAULT_EXTRACT_BUDGET } from './budget.ts'
 import { DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
 import { injectionTruth, defaultProjectRef, projectRefs } from './injection-truth.ts'
+import { collectNoise } from './noise.ts'
 
 /** 列表页单页上限（B2）：超过这个数量的库必须分页。 */
 const MEMORY_PAGE_MAX = 200;
@@ -89,6 +90,8 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
       // 回收站 = 用户显式移入的（与系统归档区分），UI 需要独立计数
       trash: all.filter(a => a.status === "archived" && a.reviewNote === "user-deleted").length,
       archivedBySystem: all.filter(a => a.status === "archived" && a.reviewNote !== "user-deleted").length,
+      // 子代理噪音（P0）：历史数据里被写进来的子代理提示词，面板给一键清理入口
+      noise: collectNoise(active),
       // 注入真相（B4）：每条为什么进/不进，面板据此分组并给一键动作
       project,
       projects: projectRefs(all),

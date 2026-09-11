@@ -51,7 +51,8 @@
     "test:watch": "vitest",
     "bench": "vitest run bench",
     "build": "node scripts/build.mjs",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "panel": "node scripts/panel-shot.mjs"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.2",

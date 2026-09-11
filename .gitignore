@@ -34,3 +34,6 @@ session*.zstd
 .nexus/
 *.local.json
 *.tgz
+
+# 面板实测产物（截图/临时 Chrome profile）
+_shots/
