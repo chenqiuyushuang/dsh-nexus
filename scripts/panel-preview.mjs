@@ -18,7 +18,9 @@ const dark = process.argv.includes('--dark')
 const chrome = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const html = readFileSync(fileURLToPath(new URL('../lib/nexus.html', import.meta.url)), 'utf8')
 const harness = '<!doctype html><html><head><meta charset="utf-8"><style>html{font-size:' + font + 'px}html,body{margin:0;background:#111}iframe{border:0;display:block}</style></head><body>' +
-  '<iframe id="f" src="/nexus" style="width:' + String(width) + 'px;height:' + String(height) + 'px"></iframe></body></html>'
+  '<iframe id="f" src="/nexus" style="width:' + String(width) + 'px;height:' + String(height) + 'px"></iframe>' +
+  // 复刻 DSH 宿主的高度协商：面板 postMessage nexus-height，宿主据此调整 iframe（上限 620）
+  '<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="nexus-height"){var f=document.getElementById("f");f.style.height=Math.min(e.data.height,620)+"px";window.__panelHeight=e.data.height}})<\/script></body></html>'
 // 宿主主题属性：面板在嵌入态跟随宿主的 data-ds-dark-theme（B7），测试宿主必须给上
 const themedHarness = dark ? harness.replace('<body>', '<body data-ds-dark-theme>') : harness
 const port = Number(arg('port', '9336'))
@@ -73,6 +75,8 @@ try {
     const first = rows[0]
     return {
       frame: { w: Math.round(win.innerWidth), h: Math.round(win.innerHeight) },
+      panelReportedHeight: window.__panelHeight ?? null,
+      listMinHeight: list ? getComputedStyle(list).minHeight : null,
       sections: { header: box(doc, '.nx-header'), scopebar: box(doc, '.nx-scopebar'), inject: box(doc, '.nx-inject'), stats: box(doc, '.nx-stats'), toolbar: box(doc, '.nx-toolbar'), decisions: box(doc, '.nx-decisions'), list: box(doc, '.nx-list'), footer: box(doc, '.nx-footer') },
       toolbarRows,
       rowHeight: first ? Math.round(first.getBoundingClientRect().height) : null,

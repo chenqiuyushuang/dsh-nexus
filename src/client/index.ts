@@ -13,7 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import { createElement, useEffect, useState } from 'react'
+import { createElement, useEffect, useRef, useState } from 'react'
 
 /** 设置项导航标签。 */
 const NAV_LABEL = '记忆'
@@ -30,6 +30,7 @@ export const inject = ['slots']
  */
 function MemorySection(): ReturnType<typeof createElement> {
   const [height, setHeight] = useState(0)
+  const frame = useRef<HTMLIFrameElement | null>(null)
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (event.origin !== window.location.origin) return
@@ -37,9 +38,23 @@ function MemorySection(): ReturnType<typeof createElement> {
       if (data?.type === 'nexus-height' && typeof data.height === 'number' && data.height > 0) setHeight(data.height)
     }
     window.addEventListener('message', onMessage)
-    return () => { window.removeEventListener('message', onMessage) }
+    // 面板需要知道宿主能给它多高（否则只能按默认上限猜）；宿主尺寸变化要重发
+    const sendViewport = (): void => {
+      const host = frame.current?.parentElement
+      const available = host !== null && host !== undefined && host.clientHeight > 0 ? host.clientHeight : window.innerHeight - 160
+      frame.current?.contentWindow?.postMessage({ type: 'nexus-viewport', height: available }, window.location.origin)
+    }
+    const timer = window.setInterval(sendViewport, 500)
+    window.addEventListener('resize', sendViewport)
+    sendViewport()
+    return () => {
+      window.removeEventListener('message', onMessage)
+      window.removeEventListener('resize', sendViewport)
+      window.clearInterval(timer)
+    }
   }, [])
   return createElement('iframe', {
+    ref: frame,
     src: '/nexus',
     title: 'Nexus 记忆面板',
     style: {

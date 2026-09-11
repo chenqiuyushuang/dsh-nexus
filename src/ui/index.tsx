@@ -50,9 +50,34 @@ if (window.parent !== window) {
   // 高度上限：不再把无上限的 scrollHeight 推给宿主（UI 专家实测：80 行会把 iframe 撑到数千 px，
   // 头部 236px 全部滚出视野）。上限 620px，宿主若更矮则用宿主高度（由 nexus-viewport 消息告知）。
   let hostHeight = 0
+  /**
+   * 期望高度 = 列表以外各区块的真实高度 + 列表期望高度（最多 6 行）。
+   * 不能用 documentElement.scrollHeight：.nx-app 是 height:100%，scrollHeight 恒等于
+   * 当前 iframe 高度 → 面板只会「保持原样」，永远长不大（实测上报 448 = 当前高度）。
+   */
+  const desiredHeight = (): number => {
+    const app = document.querySelector('.nx-app')
+    const list = document.querySelector('.nx-list')
+    let chrome = 0
+    if (app !== null) {
+      const style = getComputedStyle(app)
+      chrome += Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom)
+      for (const child of app.children) {
+        if (child === list) continue
+        const rect = child.getBoundingClientRect()
+        const margin = Number.parseFloat(getComputedStyle(child).marginBottom)
+        chrome += rect.height + (Number.isFinite(margin) ? margin : 0)
+      }
+    }
+    const firstRow = list?.querySelector('.nx-row')
+    const pitch = (firstRow !== null && firstRow !== undefined ? firstRow.getBoundingClientRect().height : 44) + 6
+    const listDesired = list === null ? 0 : Math.min(list.scrollHeight, pitch * 6)
+    return Math.ceil(chrome + Math.max(listDesired, 160) + 8)
+  }
   const report = (): void => {
-    const cap = hostHeight > 0 ? Math.min(620, Math.max(320, hostHeight - 24)) : 480
-    const height = Math.min(document.documentElement.scrollHeight, cap)
+    // 宿主没告知可用高度时按 620 申请（面板自身会滚，宿主不认也不会更差）
+    const cap = hostHeight > 0 ? Math.min(620, Math.max(320, hostHeight - 24)) : 620
+    const height = Math.min(desiredHeight(), cap)
     window.parent.postMessage({ type: 'nexus-height', height }, '*')
   }
   window.addEventListener('message', (event: MessageEvent) => {
