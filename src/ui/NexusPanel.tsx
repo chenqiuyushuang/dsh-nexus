@@ -523,6 +523,7 @@ export function NexusPanel(): React.ReactNode {
               {...(neighbors[item.id] !== undefined ? { neighbors: neighbors[item.id] } : {})}
               neighborsOpen={openIds.has(item.id)}
               onToggleNeighbors={toggleNeighbors}
+              {...(state?.injection !== undefined ? { budgetBytes: state.injection.budgetBytes } : {})}
               onLoadFull={loadFull}
               onSave={saveEdit}
               onConfirm={confirmOne}

@@ -56,6 +56,9 @@ describe('B4 注入条渲染', () => {
     expect((html.match(/用户的名字是 Daniel/g) ?? []).length).toBe(1)
     expect(html).toContain('剩余 614 B')
     expect(html).toContain('120 B · 12%')
+    // 单条吃预算 ≥30% 要标黄并给可执行提示（本例 120/1024 = 12%，不该标）
+    expect(html).not.toContain('nx-inject-bytes heavy')
+    expect(html).not.toContain('吃掉了 30% 以上预算')
     expect(html).toContain('归属未知（1）')
     expect(html).toContain('单条超预算（1）')
     expect(html).toContain('按隔离规则永不注入')

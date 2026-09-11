@@ -105,9 +105,12 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
       <div className="nx-inject-side">
         <Tag text={entry.scope === 'user' ? '跨项目' : entry.scope === 'project' ? '本项目' : '本会话'} className="scope" />
         {entry.pinned && <Tag text="置顶" />}
-        <span className="nx-inject-bytes">{entry.bytes > 0 ? entry.bytes + ' B · ' + Math.round((entry.bytes / Math.max(1, truth.budgetBytes)) * 100) + '%' : '—'}</span>
+        {/* 只有「已进入」的条目才谈得上吃预算；被挤掉的条目本身没占位 */}
+        <span className={'nx-inject-bytes' + (isShown && entry.bytes / Math.max(1, truth.budgetBytes) >= 0.3 ? ' heavy' : '')}>
+          {entry.bytes > 0 ? entry.bytes + ' B · ' + Math.round((entry.bytes / Math.max(1, truth.budgetBytes)) * 100) + '%' : '—'}
+        </span>
       </div>
-      {!isShown && editId === entry.id && (
+      {editId === entry.id && (
         <div className="nx-inject-edit">
           <textarea className="nx-edit" rows={3} value={editText} onChange={(event) => setEditText(event.target.value)} autoFocus />
           <div className="nx-inject-edit-meta">
@@ -120,8 +123,10 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
           </div>
         </div>
       )}
-      {!isShown && editId !== entry.id && (
+      {editId !== entry.id && (
         <div className="nx-inject-actions">
+          {/* 吃预算的「已进入」条目也要能就地缩短 */}
+          {isShown && entry.bytes / Math.max(1, truth.budgetBytes) >= 0.3 && <Btn onClick={() => startEdit(entry)}>缩短</Btn>}
           {entry.reason === 'unknown-project' || entry.reason === 'other-project'
             ? <Btn kind="primary" onClick={() => onAssign(entry.id, project)}>指派到当前项目</Btn>
             : null}
@@ -170,6 +175,11 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
               </span>
             </div>
             {truth.shown.length === 0 ? <div className="nx-empty">没有记忆进入上下文。</div> : [...truth.shown].sort((a, b) => b.bytes - a.bytes).map((entry) => renderRow(entry, true))}
+            {truth.shown.some((entry) => entry.bytes / Math.max(1, truth.budgetBytes) >= 0.3) && (
+              <div className="nx-hint">
+                标黄的条目吃掉了 30% 以上预算 —— 缩短它就能把位置让给其他记忆（点这一行右侧的「缩短」）。
+              </div>
+            )}
           </div>
           {groups.map((group) => (
             <div className="nx-inject-group" key={group.meta.key}>

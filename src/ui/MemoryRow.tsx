@@ -51,6 +51,8 @@ export interface MemoryRowProps {
   neighbors?: NeighborState
   neighborsOpen: boolean
   onToggleNeighbors: (id: string) => void
+  /** 注入预算（字节）：用于显示这一条占预算的比例。 */
+  budgetBytes?: number
   /** 取全文（列表只给 400 字预览）。 */
   onLoadFull: (id: string) => Promise<string>
   onSave: (id: string, statement: string, scope: string) => Promise<boolean>
@@ -64,7 +66,7 @@ export interface MemoryRowProps {
 }
 
 export function MemoryRow({
-  item, selected, onSelect, defaultExpanded, neighbors, neighborsOpen, onToggleNeighbors,
+  item, selected, onSelect, defaultExpanded, neighbors, neighborsOpen, onToggleNeighbors, budgetBytes = Number.NaN,
   onLoadFull, onSave, onConfirm, onTogglePin, onArchive, onRestore, onDelete, onPurge, onMerge,
 }: MemoryRowProps): ReactNode {
   const [expanded, setExpanded] = useState(defaultExpanded === true)
@@ -198,7 +200,11 @@ export function MemoryRow({
           <div className="nx-meta">
             <span>ID:{item.id}</span>
             <span>权重:{item.weight} · 置信度:{Math.round((item.confidence ?? 0) * 100)}%</span>
-            {item.injectBytes !== undefined && <span>占注入 {item.injectBytes} B</span>}
+            {item.injectBytes !== undefined && (
+              <span className={item.injectBytes / budgetBytes >= 0.3 ? 'heavy' : undefined}>
+                占注入 {item.injectBytes} B{Number.isFinite(budgetBytes) && budgetBytes > 0 ? '（预算的 ' + Math.round((item.injectBytes / budgetBytes) * 100) + '%）' : ''}
+              </span>
+            )}
             <span>更新 {new Date(item.updatedAt).toLocaleString()}</span>
           </div>
           <div className="nx-actions">
