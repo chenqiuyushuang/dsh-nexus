@@ -190,8 +190,13 @@ html.embedded .nx-count { margin-left: 0; }
 /* 窄栏：注入条允许换行，别把「未进入 N」挤出可视区 */
 html.embedded .nx-inject-bar { flex-wrap: wrap; row-gap: 4px; }
 /* 窄栏：控件整体收紧一档（搜索框 + 2 个下拉 + 3 个按钮 + 计数 = 2 行） */
-html.embedded .nx-select-trigger { padding: 5px 8px; font-size: 12px; }
-html.embedded .nx-btn { padding: 5px 9px; font-size: 12px; }
+/* 字号用相对单位跟随宿主（原 12px 硬编码：17px 宿主下正文变大而控件不变）；
+   内边距仍用 px 保密度 —— 实测 17/20px 宿主下工具栏仍 3 行、列表 3–6 行、头部不滚走 */
+html.embedded .nx-select-trigger { padding: 5px 8px; font-size: 0.86em; }
+html.embedded .nx-btn { padding: 5px 9px; font-size: 0.86em; }
+html.embedded .nx-chip { font-size: 0.86em; }
+html.embedded .nx-count { font-size: 0.86em; }
+html.embedded .nx-line-status { font-size: 0.86em; }
 html.embedded .nx-tool-more { display: none; }
 /* 窄栏：注入条只留数字（进度条与「进入上下文」标签可省，数字自明）→ 单行 40px 而不是两行 67px */
 html.embedded .nx-inject-meter { display: none; }
@@ -200,7 +205,7 @@ html.embedded .nx-inject-note { display: none; }
 /* 窄栏：搜索框独占一行，其余控件才能并排成 2 行 */
 /* 窄栏：搜索与作用域同排（搜索不再独占整行），并把统计/占比条压矮一档 */
 html.embedded .nx-search { flex: 1 1 120px; min-width: 110px; }
-html.embedded .nx-chip { padding: 3px 8px; font-size: 11.5px; }
+html.embedded .nx-chip { padding: 3px 8px; }
 html.embedded .nx-scopebar-track { height: 4px; }
 html.embedded .nx-scopebar-legend { margin-top: 4px; font-size: 11px; gap: 8px; }
 /* 窄栏：折叠行不再显示「活跃」（无信息量，且占掉约 1/4 正文宽度）；异常状态照常显示 */

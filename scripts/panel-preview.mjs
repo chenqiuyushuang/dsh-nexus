@@ -20,7 +20,9 @@ const html = readFileSync(fileURLToPath(new URL('../lib/nexus.html', import.meta
 const harness = '<!doctype html><html><head><meta charset="utf-8"><style>html{font-size:' + font + 'px}html,body{margin:0;background:#111}iframe{border:0;display:block}</style></head><body>' +
   '<iframe id="f" src="/nexus" style="width:' + String(width) + 'px;height:' + String(height) + 'px"></iframe>' +
   // 复刻 DSH 宿主的高度协商：面板 postMessage nexus-height，宿主据此调整 iframe（上限 620）
-  '<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="nexus-height"){var f=document.getElementById("f");f.style.height=Math.min(e.data.height,620)+"px";window.__panelHeight=e.data.height}})<\/script></body></html>'
+  (process.argv.includes('--fixed')
+    ? '<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="nexus-height"){window.__panelHeight=e.data.height}})<\/script>'
+    : '<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="nexus-height"){var f=document.getElementById("f");f.style.height=Math.min(e.data.height,620)+"px";window.__panelHeight=e.data.height}})<\/script>') + '</body></html>'
 // 宿主主题属性：面板在嵌入态跟随宿主的 data-ds-dark-theme（B7），测试宿主必须给上
 const themedHarness = dark ? harness.replace('<body>', '<body data-ds-dark-theme>') : harness
 const port = Number(arg('port', '9336'))
@@ -108,6 +110,9 @@ try {
       listH: list ? Math.round(list.getBoundingClientRect().height) : null,
       visibleRows: list && first ? Math.floor(list.getBoundingClientRect().height / (first.getBoundingClientRect().height + 6)) : 0,
       listScrolls: list ? list.scrollHeight > list.clientHeight + 2 : false,
+      // 缩放体检：文档是否溢出（溢出＝头部会被外层滚走，B1 修过的病复发）
+      docOverflow: doc.documentElement.scrollHeight - doc.documentElement.clientHeight,
+      headerTop: doc.querySelector('.nx-header') ? Math.round(doc.querySelector('.nx-header').getBoundingClientRect().top) : null,
       toolbarItems: toolbar ? [...toolbar.children].map((c) => ({ text: (c.textContent || '').trim().slice(0, 10), w: Math.round(c.getBoundingClientRect().width), row: Math.round(c.getBoundingClientRect().top) })) : [],
     }
   })()`
