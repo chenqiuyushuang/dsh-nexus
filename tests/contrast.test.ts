@@ -123,6 +123,12 @@ const NON_TEXT: Array<[string, string, string]> = [
   ['置信度圆点·低', 'nx-conf-low', 'nx-bg-card'],
   // 键盘焦点环（inset 2px 实心条）
   ['键盘焦点环', 'nx-accent', 'nx-bg-card'],
+  // 参考稿档下变大的可见控件：悬停描边、展开箭头、标签描边（都是非文本，需 ≥3:1）
+  ['悬停/选中描边', 'nx-accent', 'nx-bg-card'],
+  ['展开箭头', 'nx-text-tertiary', 'nx-bg-card'],
+  ['标签描边·活跃', 'nx-success-text', 'nx-bg-card'],
+  ['标签描边·待确认', 'nx-warn-text', 'nx-bg-card'],
+  ['标签描边·冲突', 'nx-error-text', 'nx-bg-card'],
 ]
 
 for (const [mode, aliases] of [['亮色', lightAliases], ['暗色', darkAliases]] as const) {

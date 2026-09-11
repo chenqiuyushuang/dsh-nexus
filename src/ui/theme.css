@@ -220,6 +220,9 @@ html.embedded .nx-settings:not(.open) { display: none; }
 
 html.embedded .nx-settings-body .nx-disclosure-inner { max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
 /* 窄栏：占用卡与工具栏各收一档（参考稿是 780 宽弹窗，这里要腾出行高） */
+/* 窄栏：噪音横幅 94px ≈ 一行记忆 → 收成一条细提示（内容不删，只是不抢首屏） */
+html.embedded .nx-banner.noise { padding: 4px 8px; font-size: 11px; margin-bottom: 6px; line-height: 1.45; }
+html.embedded .nx-banner.noise .nx-btn { padding: 2px 8px; font-size: 11px; }
 html.embedded .nx-progress { padding: 8px 10px; margin-bottom: 6px; }
 html.embedded .nx-progress-head { margin-bottom: 6px; }
 html.embedded .nx-status-cards { margin-bottom: 6px; gap: 5px; }
@@ -350,9 +353,10 @@ html.embedded .nx-sub { display: none; }
 /* 颜色只给状态：槽位/资料标签一律中性（原来用了 4 种色相，噪音大且与状态抢注意力） */
 .nx-tag.slot-personal, .nx-tag.slot-user, .nx-tag.slot-project,
 .nx-tag.slot-episode, .nx-tag.slot-feedback, .nx-tag.slot-reference { background: var(--nx-tag-bg); color: var(--nx-text-secondary); }
-.nx-tag.status-active { background: transparent; border-color: var(--nx-success); color: var(--nx-success-text); }
-.nx-tag.status-pending { background: transparent; border-color: var(--nx-warn); color: var(--nx-warn-text); }
-.nx-tag.status-needs-review { background: transparent; border-color: var(--nx-error); color: var(--nx-error-text); }
+/* 描边也是非文本：白底上 --nx-success/--nx-warn 只有 2.28/2.15:1，改用文本级 token（≥3:1） */
+.nx-tag.status-active { background: transparent; border-color: var(--nx-success-text); color: var(--nx-success-text); }
+.nx-tag.status-pending { background: transparent; border-color: var(--nx-warn-text); color: var(--nx-warn-text); }
+.nx-tag.status-needs-review { background: transparent; border-color: var(--nx-error-text); color: var(--nx-error-text); }
 .nx-tag.status-archived, .nx-tag.status-superseded { background: transparent; border-color: var(--nx-text-muted); color: var(--nx-text-tertiary); }
 
 .nx-statement { margin: 8px 0 2px; white-space: pre-wrap; word-break: break-word; color: var(--nx-text); }
@@ -718,6 +722,36 @@ html.embedded .nx-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; oversc
   display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px;
   border-top: 1px solid var(--nx-border-card); margin-top: 8px;
 }
+
+/* ---- 参考稿绝对尺寸（418 窄栏下的"一模一样"档） ---- */
+/* 样例 HTML 的原始数值：卡片 16px 内边距、条目 14px、搜索 8/12、状态卡两行大数字、色条 4px 宽。
+   418px 窄栏下这些比例会明显吃掉列表高度 —— 是否采用由用户定（0.7 档）。 */
+.nx-app.reference-scale { padding: 16px; }
+/* 半档：保留紧凑的卡片与状态卡，只把条目做成参考稿的宽松比例（14px 内边距 / 13px 标题）
+   —— 用户可能想要的就是"列表看起来像样例"这一件事 */
+.nx-app.row-scale .nx-row-head { padding: 14px; gap: 12px; }
+.nx-app.row-scale .nx-row-title { font-size: 13px; line-height: 1.45; }
+.nx-app.row-scale .nx-row-sub { font-size: 11.5px; gap: 0 12px; }
+.nx-app.row-scale .nx-check { width: 16px; height: 16px; }
+.nx-app.row-scale .nx-sbar { width: 4px; height: 20px; }
+.nx-app.row-scale .nx-tag { font-size: 11px; padding: 2px 8px; }
+.nx-app.row-scale .nx-listcard-head { padding: 10px 14px; font-size: 12px; }
+.nx-app.reference-scale .nx-progress { padding: 16px; margin-bottom: 12px; }
+.nx-app.reference-scale .nx-progress-head { font-size: 13px; margin-bottom: 10px; }
+.nx-app.reference-scale .nx-progress-track { height: 6px; margin-bottom: 8px; }
+.nx-app.reference-scale .nx-progress-legend { gap: 0 16px; justify-content: space-between; font-size: 12px; }
+.nx-app.reference-scale .nx-status-card { flex-direction: column; gap: 4px; padding: 12px 6px; }
+.nx-app.reference-scale .nx-status-card-value { font-size: 18px; }
+.nx-app.reference-scale .nx-status-cards { gap: 8px; margin-bottom: 12px; }
+.nx-app.reference-scale .nx-toolbar { gap: 8px; margin-bottom: 12px; }
+.nx-app.reference-scale .nx-search { padding: 8px 12px; font-size: 13px; }
+.nx-app.reference-scale .nx-listcard-head { padding: 10px 14px; font-size: 12px; }
+.nx-app.reference-scale .nx-row-head { padding: 14px; gap: 12px; }
+.nx-app.reference-scale .nx-row-title { font-size: 13px; line-height: 1.45; }
+.nx-app.reference-scale .nx-row-sub { font-size: 11.5px; gap: 0 12px; }
+.nx-app.reference-scale .nx-tag { font-size: 11px; padding: 2px 8px; }
+.nx-app.reference-scale .nx-check { width: 16px; height: 16px; }
+.nx-app.reference-scale .nx-sbar { width: 4px; height: 20px; }
 
 /* 动效尊重系统偏好（前庭功能敏感用户） */
 @media (prefers-reduced-motion: reduce) {

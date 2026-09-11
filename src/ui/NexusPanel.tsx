@@ -483,7 +483,8 @@ export function NexusPanel(): React.ReactNode {
   }
 
   return (
-    <div className="nx-app">
+    // 独立页（非嵌入）本来就是全宽 —— 给它参考稿的绝对尺寸档，缩进页保持紧凑档
+    <div className={'nx-app' + (embedded ? '' : ' reference-scale')}>
       {state?.noise !== undefined && state.noise.count > 0 && (
         <div className="nx-banner noise" role="status">
           <span>检测到 <b>{state.noise.count}</b> 条疑似无效记忆（子代理回执或提示词被写成了记忆，会挤占 1KB 注入预算）。</span>
@@ -593,6 +594,13 @@ export function NexusPanel(): React.ReactNode {
           { value: 'episode', label: '本会话' },
         ]} />
         <span className="nx-tool-more"><Btn onClick={reload}>刷新</Btn></span>
+        {/* DSH 设置弹窗的内容区是固定的窄栏（实测 418px），样例 HTML 是 720px；
+            想看参考稿的真实比例，只能在独立页（全宽）打开。 */}
+        {embedded && (
+          <span className="nx-tool-more">
+            <Btn onClick={() => { window.open('/nexus', '_blank', 'noopener') }}>全屏打开</Btn>
+          </span>
+        )}
         <Btn kind="primary" onClick={startAdd}>新增</Btn>
         {!embedded && <Btn onClick={() => setShowDecisions(!showDecisions)}>{showDecisions ? '收起决策日志' : '决策日志'}</Btn>}
       </div>

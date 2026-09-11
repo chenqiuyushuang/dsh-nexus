@@ -106,6 +106,12 @@ try {
     await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const row = doc.querySelectorAll(".nx-row")[1]; if (!row) return false; const r = row.getBoundingClientRect(); row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: Math.round(r.left + 20), clientY: Math.round(r.top + 16) })); return true })()' })
     await new Promise((r) => setTimeout(r, 700))
   }
+  // 场景：参考稿绝对尺寸档（对照用；由面板 CSS 的 .reference-scale 类驱动）
+  if (process.argv.includes('--reference-scale') || process.argv.includes('--row-scale')) {
+    const cls = process.argv.includes('--reference-scale') ? 'reference-scale' : 'row-scale'
+    await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const app = doc.querySelector(".nx-app"); if (app) app.classList.add("' + cls + '"); return !!app })()' })
+    await new Promise((r) => setTimeout(r, 700))
+  }
   if (process.argv.includes('--select-first')) {
     await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const row = doc.querySelector(".nx-row"); const cb = doc.querySelector(".nx-check"); window.__beforeTop = row ? Math.round(row.getBoundingClientRect().top) : null; if (cb) cb.click(); return window.__beforeTop })()' })
     await new Promise((r) => setTimeout(r, 700))
