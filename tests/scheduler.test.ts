@@ -1,6 +1,6 @@
 /** Scheduler pure helpers: injection text, modes, projectRef degrade. */
 import { describe, expect, it } from 'vitest'
-import { buildInjectionText, isDelegatedSession, projectRefOf, renderSummaryLine, SessionModeControl } from '../src/scheduler.ts'
+import { buildInjectionText, isDelegatedSession, projectRefOf, renderSummaryLine, SessionModeControl, shouldReinjectAfterCompaction } from '../src/scheduler.ts'
 import { mkAtom } from './atom.test.ts'
 
 describe('buildInjectionText', () => {
@@ -68,5 +68,15 @@ describe('会话归属与子代理门控（P0/P1 回归）', () => {
     expect(isDelegatedSession({ header: { delegationDepth: 2 } } as never)).toBe(true)
     expect(isDelegatedSession({ header: { cwd: '/p' } } as never)).toBe(false)
     expect(isDelegatedSession({} as never)).toBe(false)
+  })
+})
+describe('压缩感知重注入（P1）', () => {
+  it('压缩结束与裁剪要重注入，其余事件不重注入', () => {
+    expect(shouldReinjectAfterCompaction('compaction/end')).toBe(true)
+    expect(shouldReinjectAfterCompaction('compaction/prune')).toBe(true)
+    expect(shouldReinjectAfterCompaction('compaction/start')).toBe(false)
+    expect(shouldReinjectAfterCompaction('compaction/summary')).toBe(false)
+    expect(shouldReinjectAfterCompaction('user/message')).toBe(false)
+    expect(shouldReinjectAfterCompaction('assistant/message')).toBe(false)
   })
 })

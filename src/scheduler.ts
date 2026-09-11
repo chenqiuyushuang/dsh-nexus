@@ -112,6 +112,17 @@ export function projectRefOf(session: Session): string | undefined {
  * 子代理/派生会话：其"用户消息"是上级代理的提示词，不是用户本人说的话。
  * 真实库曾出现 24 条 user 记忆里 17 条是子代理提示词 → 必须门控（否则跨项目污染 + 反复注入）。
  */
+/**
+ * 上下文压缩后是否需要重新注入。
+ *
+ * 为什么：注入是「首轮一次 + 指纹变化才刷新」，而压缩会把之前的注入块移出上下文 ——
+ * 指纹没变、又不是首轮，于是**记忆再也不会出现**（用户以为它坏了）。
+ * DSH 会发 compaction/start|end|prune|summary 四种事件，取「结束」与「裁剪」两种。
+ */
+export function shouldReinjectAfterCompaction(eventType: string): boolean {
+  return eventType === 'compaction/end' || eventType === 'compaction/prune'
+}
+
 export function isDelegatedSession(session: Session): boolean {
   try {
     const header = (session as unknown as { header?: { origin?: string; delegationDepth?: number } }).header
@@ -212,6 +223,9 @@ export function installScheduler(ctx: Context, facility: NexusFacility, config: 
             }
           }
         }
+      } else if (shouldReinjectAfterCompaction(type)) {
+        // 压缩/裁剪会带走已注入的记忆块：清掉本会话标记，下一次 pre-step 重新注入
+        injectMarkers.delete(String(session.id))
       } else if (type === 'assistant/message') {
         const text = assistantText(data)
         if (text !== undefined && text.length > 0) {
