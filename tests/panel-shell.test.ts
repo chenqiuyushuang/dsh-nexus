@@ -98,11 +98,27 @@ describe('0.6 面板外壳', () => {
   it('折叠记忆行默认 inert 收起，展开后解除（Grid 行动画的前提）', async () => {
     await mountPanel()
     const row = rows()[0]!
-    expect(row.querySelector('.nx-row-more')?.className).not.toContain('open')
-    expect(row.querySelector('.nx-row-more .nx-disclosure-inner')?.hasAttribute('inert')).toBe(true)
-    click(row.querySelector('.nx-statement.folded')!)
-    expect(row.querySelector('.nx-row-more')?.className).toContain('open')
-    expect(row.querySelector('.nx-row-more .nx-disclosure-inner')?.hasAttribute('inert')).toBe(false)
+    expect(row.querySelector('.nx-row-details')?.className).not.toContain('open')
+    expect(row.querySelector('.nx-row-details .nx-disclosure-inner')?.hasAttribute('inert')).toBe(true)
+    // 参考稿条目：整行头部就是展开热区
+    click(row.querySelector('.nx-row-head')!)
+    expect(row.querySelector('.nx-row-details')?.className).toContain('open')
+    expect(row.querySelector('.nx-row-details .nx-disclosure-inner')?.hasAttribute('inert')).toBe(false)
+    expect(row.querySelector('.nx-row-head')?.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('参考稿容器齐备：占用卡 / 状态卡 / 列表容器（表头 + 全选）', async () => {
+    await mountPanel()
+    expect(container.querySelector('.nx-progress')).not.toBeNull()
+    expect(container.querySelector('.nx-progress-badge')).not.toBeNull()
+    const cards = Array.from(container.querySelectorAll('.nx-status-card'))
+    expect(cards.length).toBe(4)
+    expect(container.querySelector('.nx-listcard-head')?.textContent).toContain('全选本页')
+    // 状态卡 = 筛选入口：点「冲突」把状态筛选切过去，aria-pressed 跟随
+    const conflict = cards.find((c) => (c.textContent ?? '').includes('冲突'))!
+    click(conflict)
+    await act(async () => { await vi.advanceTimersByTimeAsync(400) })
+    expect(conflict.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('键盘 ↑↓ 移动焦点环，空格切换勾选（不误触选中）', async () => {

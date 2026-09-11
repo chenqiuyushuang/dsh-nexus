@@ -40,19 +40,21 @@ function renderRow(overrides: Partial<MemoryRowItem> = {}, extra: { selected?: b
   }))
 }
 
-describe('B3 折叠行', () => {
-  it('折叠态只有标签行 + 两行正文：没有元信息、没有次要操作', () => {
+describe('0.6.1 参考稿条目', () => {
+  it('折叠态 = 勾选框 + 圆点 + 两行标题 + 副信息 + 状态标签，元信息被 inert 收起', () => {
     const html = renderRow()
-    expect(html).toContain('nx-statement folded')
+    // 参考稿 .list-item-main：标题两行 clamp（原先是单行省略 .nx-statement.folded）
+    expect(html).toContain('nx-row-title')
+    expect(html).toContain('nx-row-sub')
     expect(html).toContain('nx-sbar scope-project')
     expect(html).toContain('更多操作')
-    // 标签行只在展开后出现（折叠态用色条 + 状态字表达）
+    // 状态改由右侧标签承载，不再有独立标签行
     expect(html).not.toContain('nx-tags')
     expect(html).toContain('活跃')
     // 展开区改为 Grid 行动画（0fr↔1fr）后内容常驻 DOM：可见性与可访问性交给 inert，
-    // 因此断言从"文字不存在"改成"被 inert 收起"，这才是真正的不暴露（读屏 + Tab 都进不去）。
-    expect(html).toContain('nx-disclosure nx-row-more')
-    expect(html).not.toContain('nx-disclosure open nx-row-more')
+    // 断言从"文字不存在"改成"被 inert 收起"，这才是真正的不暴露（读屏 + Tab 都进不去）。
+    expect(html).toContain('nx-disclosure nx-row-details')
+    expect(html).not.toContain('nx-disclosure open nx-row-details')
     expect(html).toContain('inert=""')
     expect(html).not.toContain('归档')
     expect(html).not.toContain('移入回收站')
@@ -60,13 +62,13 @@ describe('B3 折叠行', () => {
     expect((html.match(/nx-btn danger/g) ?? []).length).toBeLessThanOrEqual(1)
   })
 
-  it('展开后才显示元信息与截断说明', () => {
+  it('展开态 = 全文块 + 详情网格 + 截断说明', () => {
     const html = renderRow({ truncated: true, statementLength: 3200 }, { expanded: true })
-    expect(html).toContain('ID:nex_row000000000001')
-    // 展开态同样保留作用域色条（颜色只给作用域/状态）
+    expect(html).toContain('nx-rawtext')
+    expect(html).toContain('nx-detail-grid')
+    expect(html).toContain('nex_row000000000001')
     expect(html).toContain('nx-sbar scope-project')
-    expect(html).toContain('权重:5')
-    expect(html).toContain('nx-tags')
+    expect(html).toContain('权重')
     expect(html).toContain('仅显示前 400 字（全文 3200 字）')
   })
 
@@ -82,10 +84,14 @@ describe('B3 折叠行', () => {
     expect(folded).toContain('inert=""')
     expect(folded).not.toContain('nx-disclosure open')
     const open = renderRow({ status: 'pending', conflictWith: 'nex_other000000001', reviewNote: 'suspected-duplicate' }, { expanded: true })
-    expect(open).toContain('疑似与记忆 nex_other000000001 重复（近义）')
-    expect(open).toContain('nx-disclosure open nx-row-more')
+    // 参考稿 .conflict-view：旧/新对照 + 标题（没有对照原文时退回带 ID 的提示，不假装有内容）
+    expect(open).toContain('nx-diff')
+    expect(open).toContain('疑似重复（近义）')
+    expect(open).toContain('nex_other000000001')
+    expect(open).toContain('nx-disclosure open nx-row-details')
+    expect(open).toContain('合并到已有')
     // 只看展开区那一段：编辑区（未进入编辑）自身永远是 inert 的
-    expect(open.slice(open.indexOf('nx-disclosure open nx-row-more'))).not.toContain('inert=""')
+    expect(open.slice(open.indexOf('nx-disclosure open nx-row-details'))).not.toContain('inert=""')
   })
 
   it('折叠行给置信度圆点（颜色 + aria-label 双通道，不靠颜色单独传达）', () => {

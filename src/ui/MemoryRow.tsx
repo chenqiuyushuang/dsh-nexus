@@ -1,14 +1,16 @@
 /**
- * B3 列表行：折叠态 = 单行（勾选框 + 作用域色条 + 一句正文省略号 + 状态字 + ⋯，约 38px），
- * 展开后才给标签行、完整正文、冲突/重复提示与元信息；次要操作收进「⋯」菜单。
+ * V0.6.1 列表行（按参考稿样例改）：
+ *   条目 = [勾选框] [置信度圆点] [两行标题 + 副信息] [状态标签] [▾]
+ *   展开 = 原始文本块 + 详情网格（ID/作用域/类型/权重/置信度/占注入/更新时间）
+ *          + 冲突或重复时的旧/新对照卡（参考稿 conflict-view / diff-grid）
  *
- * 为什么要拆出来：面板原来的行同时塞 7 个按钮 + 元信息 + 提示，3000 字的记忆直接顶满一屏。
- * 拆成组件后折叠/展开/菜单/二次确认都能被渲染测试覆盖（见 tests/panel-list.test.ts）。
+ * 与上一版的差别：标题从"单行省略"改成参考稿的两行 clamp（信息量更大且不占更多行高）；
+ * 作用域/类型从标签行移进副信息；元信息从一行文字改成详情网格。
  */
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
-import { Btn, Select, Tag } from './components.tsx'
+import { Btn, Select } from './components.tsx'
 import { nextMenuIndex } from './keyboard.ts'
 
 export interface MemoryRowItem {
@@ -61,9 +63,22 @@ function ConfDot({ confidence }: { confidence?: number }): ReactNode {
   return <span className={'nx-conf ' + tone} title={'置信度 ' + String(pct) + '%'} aria-label={'置信度 ' + String(pct) + '%'} role="img" />
 }
 
+/** 相对时间（参考稿的「1天前」）。超过 30 天给日期，避免"3个月前"这种没有信息量的模糊说法。 */
+function relTime(at: number): string {
+  const diff = Date.now() - at
+  if (!Number.isFinite(diff) || diff < 0) return new Date(at).toLocaleDateString()
+  const min = Math.floor(diff / 60000)
+  if (min < 1) return '刚刚'
+  if (min < 60) return String(min) + ' 分钟前'
+  const hour = Math.floor(min / 60)
+  if (hour < 24) return String(hour) + ' 小时前'
+  const day = Math.floor(hour / 24)
+  if (day <= 30) return String(day) + ' 天前'
+  return new Date(at).toLocaleDateString()
+}
+
 const FOLDED_HINT = '点击展开全文'
 const COLLAPSE_HINT = '点击收起'
-
 export interface MemoryRowProps {
   item: MemoryRowItem
   selected: boolean
@@ -93,14 +108,17 @@ export interface MemoryRowProps {
   /** 右键菜单状态（panel 传；不传则只支持行内「⋯」）。 */
   ctxMenu?: RowContextMenu
   onRowContextMenu?: (id: string, event: { clientX: number; clientY: number; preventDefault: () => void }) => void
+  /** 冲突/重复对象的那一句（面板从 neighbors 取；没有则退回只显示 ID 的提示） */
+  conflictStatement?: string
 }
 
 export function MemoryRow({
   item, selected, focused = false, onSelect, defaultExpanded, expandedId, onToggleExpand, neighbors, neighborsOpen, onToggleNeighbors, budgetBytes = Number.NaN,
   onLoadFull, onSave, onConfirm, onTogglePin, onArchive, onRestore, onDelete, onPurge, onMerge,
-  ctxMenu, onRowContextMenu,
+  ctxMenu, onRowContextMenu, conflictStatement,
 }: MemoryRowProps): ReactNode {
   const [expandedLocal, setExpandedLocal] = useState(defaultExpanded === true)
+  const [fullText, setFullText] = useState<string | null>(null)
   // 受控优先（面板传 expandedId）；未受控时用本地状态（组件单测与独立使用）
   const expanded = expandedId !== undefined ? expandedId === item.id : expandedLocal
   const setExpanded = (next: boolean): void => {
@@ -139,6 +157,25 @@ export function MemoryRow({
       if (editSeq.current === seq) setEditText(full)
     } catch { /* 取全文失败就先用预览，保存仍走服务端 */ }
   }
+  // 展开即取全文：列表只回 400 字预览，展开态要给人看真的（编辑本来也要另取）
+  const expandedNow = expandedId !== undefined ? expandedId === item.id : expandedLocal
+  useEffect(() => {
+    if (!expandedNow || item.truncated !== true || fullText !== null) return
+    let alive = true
+    void onLoadFull(item.id).then((text) => { if (alive) setFullText(text) }).catch(() => { /* 取不到就继续显示预览 */ })
+    return () => { alive = false }
+  }, [expandedNow, item.truncated, item.id, fullText, onLoadFull])
+
+  const alerting = item.status === 'needs-review' || (item.status === 'pending' && item.conflictWith !== undefined)
+  const conflictView = !alerting || item.conflictWith === undefined
+    ? null
+    : {
+        title: item.status === 'needs-review'
+          ? '⚠️ 与已有记忆冲突'
+          : '⚠️ 疑似重复（' + (item.reviewNote === 'suspected-duplicate' ? '近义' : '同类') + '）',
+        other: conflictStatement ?? ('记忆 ' + item.conflictWith + '（点「⋯ → 关系」查看原文）'),
+      }
+
   const closeMenu = (): void => { setMenuOpen(false); setConfirmArchive(false); setConfirmDelete(false); setConfirmPurge(false) }
   const onMenuKeyDown = (event: { key: string; preventDefault: () => void }): void => {
     if (event.key === 'Escape') { event.preventDefault(); closeMenu(); moreRef.current?.focus(); return }
@@ -184,16 +221,22 @@ export function MemoryRow({
       data-nx-row={item.id}
       onContextMenu={(event) => { onRowContextMenu?.(item.id, event) }}
     >
-      <div className="nx-row-head">
-        <span className={'nx-sbar scope-' + item.scope} aria-hidden="true" />
-        {/* 折叠态没有标签行：作用域不能只由颜色传达（WCAG 1.4.1） */}
-        <span className="nx-sr-only">{SCOPE_NAME[item.scope] ?? item.scope}</span>
+      <div
+        className="nx-row-head"
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        title={expanded ? COLLAPSE_HINT : FOLDED_HINT}
+        onClick={() => setExpanded(!expanded)}
+        onKeyDown={(event) => onLineKey(event, !expanded)}
+      >
         <input
           type="checkbox"
           className="nx-check"
           checked={selected}
           aria-label={'选择：' + item.subject}
           title="Shift 连选 · Cmd/Ctrl 加选"
+          onClick={(event) => { event.stopPropagation() }}
           onChange={(event) => {
             const native = event.nativeEvent as { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }
             onSelect(item.id, event.target.checked, {
@@ -201,31 +244,20 @@ export function MemoryRow({
             })
           }}
         />
-        {/* 置信度圆点：折叠态唯一能承载"这条可不可信"的位置。颜色 + title/aria-label 双通道（WCAG 1.4.1） */}
-        {!showTags && <ConfDot confidence={item.confidence} />}
-        {showTags ? (
-          <div className="nx-tags">
-            <Tag text={SCOPE_NAME[item.scope] ?? item.scope} className="scope" />
-            <Tag text={SLOT_NAME[item.slot] ?? item.slot} className={'slot-' + item.slot} />
-            <Tag text={STATUS_NAME[item.status] ?? item.status} className={'status-' + item.status} />
-            {item.pinned === true && <Tag text="置顶" />}
-          </div>
-        ) : (
-          <>
-            <svg className="nx-chevron" aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
-            <div
-              className="nx-statement folded"
-              role="button"
-              tabIndex={0}
-              aria-expanded={false}
-              title={FOLDED_HINT}
-              onClick={() => setExpanded(true)}
-              onKeyDown={(event) => onLineKey(event, true)}
-            >{item.statement}</div>
-            <span className={'nx-line-status status-' + item.status}>{STATUS_NAME[item.status] ?? item.status}</span>
+        <ConfDot confidence={item.confidence} />
+        {/* 作用域不能只由颜色传达（WCAG 1.4.1）：色条保留为视觉锚点，文字进副信息 */}
+        <span className={'nx-sbar scope-' + item.scope} aria-hidden="true" />
+        <div className="nx-row-main">
+          <div className="nx-row-title">{item.statement}</div>
+          <div className="nx-row-sub">
+            <span className="nx-scope-word">{SCOPE_NAME[item.scope] ?? item.scope} · {SLOT_NAME[item.slot] ?? item.slot}</span>
+            <span>{Math.round((item.confidence ?? 0) * 100)}%</span>
+            <span>{relTime(item.updatedAt)}</span>
             {item.pinned === true && <span className="nx-line-pin">置顶</span>}
-          </>
-        )}
+          </div>
+        </div>
+        <span className={'nx-tag status-' + item.status}>{STATUS_NAME[item.status] ?? item.status}</span>
+        <svg className="nx-chevron" aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
         {canConfirm && <Btn kind="primary" onClick={() => onConfirm(item.id)}>确认</Btn>}
         <button
           type="button"
@@ -233,7 +265,7 @@ export function MemoryRow({
           className="nx-more"
           aria-label={'更多操作：' + item.subject}
           aria-expanded={menuOpen}
-          onClick={() => { if (menuOpen) closeMenu(); else setMenuOpen(true) }}
+          onClick={(event) => { event.stopPropagation(); if (menuOpen) closeMenu(); else setMenuOpen(true) }}
         >⋯</button>
       </div>
 
@@ -252,44 +284,65 @@ export function MemoryRow({
       </Disclosure>
 
       {!editing && (
-        <Disclosure open={expanded} className="nx-row-more">
-          {/* 展开内容限高 + 内部滚动（并给键盘焦点，WCAG 2.1.1）：
-              不限高的话，一条 400 字的记忆在窄栏里就是 10 行文字墙，把整屏推走 */}
-          <div className="nx-statement-open" tabIndex={0} aria-label="记忆全文（可滚动）">
-            <div
-              className="nx-statement"
-              role="button"
-              tabIndex={0}
-              aria-expanded={true}
-              title={COLLAPSE_HINT}
-              onClick={() => setExpanded(false)}
-              onKeyDown={(event) => onLineKey(event, false)}
-            >{item.statement}</div>
-          </div>
-          <div className="nx-actions">
-            <Btn onClick={() => setExpanded(false)}>收起 ▴</Btn>
-          </div>
+        <Disclosure open={expanded} className="nx-row-details">
+          <div className="nx-row-details-inner">
+          <div className="nx-rawtext" tabIndex={0} aria-label="记忆全文（可滚动）">{fullText ?? item.statement}</div>
           {item.truncated === true && (
             <div className="nx-hint">仅显示前 400 字（全文 {item.statementLength ?? 0} 字）· 「⋯ → 编辑」看全文</div>
           )}
-          {item.status === 'needs-review' && item.conflictWith !== undefined && (
-            <div className="nx-hint">与记忆 {item.conflictWith} 冲突</div>
+
+          {conflictView !== null && (
+            <div className="nx-diff">
+              <div className="nx-diff-title">{conflictView.title}</div>
+              <div className="nx-diff-grid">
+                <div className="nx-diff-box old">
+                  <div className="nx-diff-k">已有记忆</div>
+                  {conflictView.other}
+                </div>
+                <div className="nx-diff-box new">
+                  <div className="nx-diff-k">本条记忆</div>
+                  {item.statement}
+                </div>
+              </div>
+              <div className="nx-actions">
+                {canConfirm && <Btn kind="primary" onClick={() => onConfirm(item.id)}>确认本条</Btn>}
+                {item.status === 'pending' && item.conflictWith !== undefined && (
+                  <Btn kind="danger" onClick={() => { const keep = item.conflictWith; if (keep !== undefined) onMerge(item.id, keep) }}>合并到已有</Btn>
+                )}
+                <Btn onClick={() => setExpanded(false)}>收起</Btn>
+              </div>
+            </div>
           )}
-          {item.status === 'pending' && item.conflictWith !== undefined && (
-            <div className="nx-hint">疑似与记忆 {item.conflictWith} 重复（{item.reviewNote === 'suspected-duplicate' ? '近义' : '同类'}），可合并或保留</div>
-          )}
+
           {item.status === 'superseded' && item.supersededBy !== undefined && (
             <div className="nx-hint replaced">被记忆 {item.supersededBy} 取代</div>
           )}
-          <div className="nx-meta">
-            <span>ID:{item.id}</span>
-            <span>权重:{item.weight} · 置信度:{Math.round((item.confidence ?? 0) * 100)}%</span>
+
+          <div className="nx-detail-grid">
+            <div><span className="nx-detail-k">记忆 ID</span><span className="nx-detail-v">{item.id}</span></div>
+            <div><span className="nx-detail-k">作用域</span><span className="nx-detail-v">{SCOPE_NAME[item.scope] ?? item.scope}</span></div>
+            <div><span className="nx-detail-k">类型</span><span className="nx-detail-v">{SLOT_NAME[item.slot] ?? item.slot}</span></div>
+            <div><span className="nx-detail-k">权重</span><span className="nx-detail-v">{item.weight}</span></div>
+            <div>
+              <span className="nx-detail-k">置信度</span>
+              <span className={'nx-detail-v' + (item.confidence !== undefined && item.confidence < 0.6 ? ' heavy' : '')}>{Math.round((item.confidence ?? 0) * 100)}%</span>
+            </div>
             {item.injectBytes !== undefined && (
-              <span className={item.injectBytes / budgetBytes >= 0.3 ? 'heavy' : undefined}>
-                占注入 {item.injectBytes} B{Number.isFinite(budgetBytes) && budgetBytes > 0 ? '（预算的 ' + Math.round((item.injectBytes / budgetBytes) * 100) + '%）' : ''}
-              </span>
+              <div>
+                <span className="nx-detail-k">占注入</span>
+                <span className={'nx-detail-v' + (item.injectBytes / budgetBytes >= 0.3 ? ' heavy' : '')}>
+                  {item.injectBytes} B{Number.isFinite(budgetBytes) && budgetBytes > 0 ? '（预算的 ' + Math.round((item.injectBytes / budgetBytes) * 100) + '%）' : ''}
+                </span>
+              </div>
             )}
-            <span>更新 {new Date(item.updatedAt).toLocaleString()}</span>
+            <div><span className="nx-detail-k">更新时间</span><span className="nx-detail-v">{new Date(item.updatedAt).toLocaleString()}</span></div>
+          </div>
+
+          {conflictView === null && (
+            <div className="nx-actions">
+              <Btn onClick={() => setExpanded(false)}>收起 ▴</Btn>
+            </div>
+          )}
           </div>
         </Disclosure>
       )}

@@ -1,7 +1,8 @@
 /** Nexus 记忆面板：独立 /nexus 页与 DSH 设置面板 iframe 共用的单一实现（React）。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Chip, Btn, Select } from './components.tsx'
+import { Btn, Select } from './components.tsx'
+import { ListCard, ProgressCard, Skeleton, StateBox, StatusCards } from './RefLayout.tsx'
 import { Disclosure, MemoryRow } from './MemoryRow.tsx'
 import type { MemoryRowItem } from './MemoryRow.tsx'
 import { isPlainSlash, shouldHandleSlashKey } from './keyboard.ts'
@@ -81,6 +82,11 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/** 状态码 → 中文（状态卡与空态提示共用；与下拉选项保持同一套说法）。 */
+const STATUS_LABEL: Record<string, string> = {
+  pending: '待确认', 'needs-review': '冲突', active: '活跃', archived: '已归档', superseded: '已取代', rejected: '已拒绝',
+}
+
 interface LoadParams { q: string; s: string; st: string; p: string }
 
 /** 单页条数（服务端上限 200）。 */
@@ -132,6 +138,8 @@ export function NexusPanel(): React.ReactNode {
   const [extractSel, setExtractSel] = useState('')
   const [decisions, setDecisions] = useState<Decisions | null>(null)
   const [showDecisions, setShowDecisions] = useState(false)
+  // 注入真相（原 InjectionBar）默认收起，点占用卡徽标才展开
+  const [showInject, setShowInject] = useState(false)
   // 右键菜单：坐标由行上报，面板做视口夹取（窄栏里菜单只有 156px 宽）
   const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(null)
   // 键盘导航焦点（j/k 与上下键）：只移动焦点环，空格切换勾选
@@ -435,18 +443,7 @@ export function NexusPanel(): React.ReactNode {
     void fetchNeighbors(id)
   }
 
-  // 只给可计数、可导航的项；「降级 否」这类布尔值混进计数行是噪音（IA 专家），真降级时另有横幅
-  const chips: Array<[string, string | number, string | undefined]> = state === null
-    ? []
-    : [
-        ['在用记忆', state.active, 'ok'],
-        ['待确认', state.pending, 'warn'],
-        ['冲突', state.conflicts, 'bad'],
-        ...(state.degraded ? [['注入已降级', 'yes', 'warn'] as [string, string | number, string | undefined]] : []),
-      ]
-
-  // 嵌入窄栏（设置弹窗）里顶部只留一条状态条：摘要行与 chips 并入注入条，细节移进展开区。
-  // 指标依据：此前「摘要 2 行 + 注入条 2 行 + chips 1 行」共 5 行数字占掉约 110px，而记忆只有 4 条。
+  // ---- 参考稿结构用到的派生数据 ----
   const embedded = typeof document !== 'undefined' && document.documentElement.classList.contains('embedded')
   const detailParts: string[] = []
   if (state !== null) {
@@ -456,33 +453,37 @@ export function NexusPanel(): React.ReactNode {
     if (state.today !== undefined) detailParts.push(state.today.line)
   }
   const detailLine = detailParts.join(' · ')
+  const scopeCounts = state?.byScope ?? { user: 0, project: 0, episode: 0 }
+  const scopeTotal = Math.max(1, scopeCounts.user + scopeCounts.project + scopeCounts.episode)
+  const inject = state?.injection
+  const droppedTotal = inject === undefined ? 0 : inject.dropped.length
+  // 状态卡既是计数也是筛选入口（参考稿 .status-card）：点一下等于切状态筛选
+  const statusCards = state === null ? [] : [
+    { key: 'active', label: '在用记忆', value: state.active, tone: 'ok' as const },
+    { key: 'pending', label: '待确认', value: state.pending, tone: 'warn' as const },
+    { key: 'needs-review', label: '冲突', value: state.conflicts, tone: 'bad' as const },
+    { key: '', label: '全部状态', value: total, tone: undefined },
+  ]
+  const pickStatus = (key: string): void => { setStatus(key); clearSelection() }
+  // 参考稿的底部主按钮：只在真的有改动时才出现（没改动时它是装饰，还白占一行）
+  const settingsDirty = settings !== null && (Number(autoT) !== settings.autoAcceptThreshold || Number(modelT) !== settings.modelAutoThreshold)
+  const allOnPageSelected = items.length > 0 && items.every((item) => selected.has(item.id))
+  /** 冲突/重复对象的那一句（/api/neighbors 里的 atom.statement）—— 参考稿的 Diff 视图要它。 */
+  const conflictStatementOf = (item: MemoryItem): string | undefined => {
+    if (item.conflictWith === undefined) return undefined
+    const found = neighbors[item.conflictWith]?.list?.find((n) => n.other === item.conflictWith)
+    return found?.atom?.statement
+  }
+  // 展开时顺手取一次关系：冲突/重复的对照卡与「关系」都要它（失败不影响展开）
+  const onToggleExpand = (id: string | null): void => {
+    setExpandedId(id)
+    if (id === null) return
+    const target = items.find((item) => item.id === id)
+    if (target?.conflictWith !== undefined && neighbors[target.conflictWith]?.list === undefined) void fetchNeighbors(target.conflictWith)
+  }
 
   return (
     <div className="nx-app">
-      <header className="nx-header">
-        <div>
-          <h1 className="nx-title">记忆</h1>
-          <p className="nx-sub">查看和管理本会话沉淀的记忆。</p>
-        </div>
-        {/* 设置入口改由常驻的「设置」折叠条承担（原来这里一个按钮 + 面板里另有一块，两处入口） */}
-        <button className="nx-btn" onClick={() => setShowSettings((s) => !s)} aria-expanded={showSettings}>{showSettings ? '收起设置' : '设置'}</button>
-      </header>
-
-      {state !== null && state.active >= 20 && <ScopeBar counts={state.byScope} />}
-      {/* 摘要行与统计胶囊已移除：同样的数字在状态条里（宽屏曾同屏出现三次），
-          它们的独有信息（跨项目/本项目分布、今日流量）通过 detail 传进状态条展开区 */}
-      {state?.injection !== undefined && (
-        <InjectionBar
-          truth={state.injection}
-          projects={state.projects ?? []}
-          project={state.project ?? project}
-          counts={{ active: state.active, pending: state.pending, conflicts: state.conflicts }}
-          {...(embedded ? { trailing: <Btn onClick={() => setShowDecisions(!showDecisions)}>{showDecisions ? '收起日志' : '决策日志'}</Btn> } : {})}
-          detail={detailLine}
-          {...injectionActions}
-        />
-      )}
-
       {state?.noise !== undefined && state.noise.count > 0 && (
         <div className="nx-banner noise" role="status">
           <span>检测到 <b>{state.noise.count}</b> 条疑似无效记忆（子代理回执或提示词被写成了记忆，会挤占 1KB 注入预算）。</span>
@@ -496,11 +497,54 @@ export function NexusPanel(): React.ReactNode {
         <div className="nx-banner">近 7 天未使用记忆注入，已自动降级为「不注入」（节省 token）。继续使用后会逐步恢复。</div>
       )}
 
-      <div className="nx-stats nx-hidden">
-        {chips.length === 0 ? <span className="nx-chip">加载中…</span> : chips.map(([label, value, tone]) => (
-          <Chip key={label} label={label} value={value} tone={tone} />
-        ))}
-      </div>
+      {/* 参考稿 1：占用卡 —— 分段条 + 图例；徽标点开注入真相（原来的折叠条） */}
+      <ProgressCard
+        label="记忆占用情况"
+        {...(inject === undefined ? {} : {
+          badge: (
+            <button
+              type="button"
+              className={'nx-progress-badge' + (droppedTotal > 0 ? ' warn' : '')}
+              aria-expanded={showInject}
+              title="哪些记忆没进入上下文、为什么"
+              onClick={() => setShowInject((v) => !v)}
+            >
+              {droppedTotal > 0 ? '未进入 ' + String(droppedTotal) + ' 条' : '全部进入'}
+            </button>
+          ),
+        })}
+        segments={[
+          { key: 'user', ratio: scopeCounts.user / scopeTotal },
+          { key: 'project', ratio: scopeCounts.project / scopeTotal },
+          { key: 'episode', ratio: scopeCounts.episode / scopeTotal },
+        ]}
+        legend={<>
+          <span>跨项目 <b>{scopeCounts.user}</b></span>
+          <span>本项目 <b>{scopeCounts.project}</b></span>
+          <span>本会话 <b>{scopeCounts.episode}</b></span>
+          {inject !== undefined && <span>注入 <b>{inject.shown.length}</b> 条 / <b>{inject.bytes}</b> B（预算 {inject.budgetBytes} B）</span>}
+        </>}
+        foot={<>
+          {inject !== undefined && <Btn onClick={() => setShowInject((v) => !v)}>{showInject ? '收起注入明细' : '为什么没进入？'}</Btn>}
+          {state !== null && state.active >= 20 && <ScopeBar counts={state.byScope} />}
+        </>}
+      />
+
+      {inject !== undefined && showInject && (
+        <InjectionBar
+          truth={inject}
+          projects={state?.projects ?? []}
+          project={state?.project ?? project}
+          counts={state === null ? { active: 0, pending: 0, conflicts: 0 } : { active: state.active, pending: state.pending, conflicts: state.conflicts }}
+          {...(embedded ? { trailing: <Btn onClick={() => setShowDecisions(!showDecisions)}>{showDecisions ? '收起日志' : '决策日志'}</Btn>} : {})}
+          detail={detailLine}
+          {...injectionActions}
+        />
+      )}
+
+      {/* 参考稿 2：状态卡（计数即筛选入口） */}
+      {statusCards.length > 0 && <StatusCards cards={statusCards} active={status} onPick={pickStatus} />}
+
       {settings !== null && (
         <div className={'nx-settings' + (showSettings ? ' open' : '')}>
           <button type="button" className="nx-settings-head" aria-expanded={showSettings} onClick={() => setShowSettings((v) => !v)}>
@@ -522,10 +566,13 @@ export function NexusPanel(): React.ReactNode {
             <span className="nx-threshold-label">LLM 提炼器</span>
             <Select ariaLabel="LLM 提炼器模型" value={extractSel} onChange={(v) => setExtractSel(v)} groups={[{ label: '关闭', options: [{ value: '', label: '（不启用）' }] }, ...modelGroups]} />
           </div>
-          <div className="nx-settings-actions">
-            <Btn kind="primary" onClick={() => void saveSettings()}>保存设置</Btn>
-          </div>
           </Disclosure>
+        </div>
+      )}
+
+      {showSettings && settingsDirty && (
+        <div className="nx-footer-bar">
+          <Btn kind="primary" onClick={() => void saveSettings()}>确认并应用阈值修改</Btn>
         </div>
       )}
 
@@ -545,24 +592,9 @@ export function NexusPanel(): React.ReactNode {
           { value: 'project', label: '本项目' },
           { value: 'episode', label: '本会话' },
         ]} />
-        <Select ariaLabel="状态" value={status} onChange={(v) => setStatus(v)} options={[
-          { value: '', label: '全部状态' },
-          { value: 'pending', label: '待确认' },
-          { value: 'needs-review', label: '冲突' },
-          { value: 'active', label: '活跃' },
-          { value: 'archived', label: '已归档' },
-          { value: 'superseded', label: '已取代' },
-        ]} />
         <span className="nx-tool-more"><Btn onClick={reload}>刷新</Btn></span>
         <Btn kind="primary" onClick={startAdd}>新增</Btn>
         {!embedded && <Btn onClick={() => setShowDecisions(!showDecisions)}>{showDecisions ? '收起决策日志' : '决策日志'}</Btn>}
-        {/* 窄栏里计数要短：完整文案 99px 会把工具条挤出一整行 */}
-        <span className="nx-count" role="status" aria-live="polite">
-          {embedded
-            ? (items.length < total ? String(items.length) + ' / ' + String(total) + ' 条' : String(total) + ' 条')
-            : '显示 ' + String(items.length) + ' / 共 ' + String(total) + ' 条'}
-        </span>
-        {items.length > 0 && <span className="nx-tool-more"><Btn onClick={selectPage}>全选本页</Btn></span>}
       </div>
       <div className="nx-decisions">
         {showDecisions && state?.valueGateShadow !== undefined && (
@@ -613,68 +645,79 @@ export function NexusPanel(): React.ReactNode {
         </div>
       )}
 
-      <div className="nx-list" role="list">
-        {loading && items.length === 0 ? <div className="nx-empty">加载中…</div>
-        : error !== null ? (
-            <div className="nx-empty">
-              <div className="nx-empty-title">加载失败：{error}</div>
-              {/* 原来只有一行字，没有出路；重试是最便宜的补救 */}
-              <Btn onClick={reload}>点击重试</Btn>
+      <ListCard header={<>
+        <label>
+          <input
+            type="checkbox"
+            className="nx-check-all"
+            checked={allOnPageSelected}
+            ref={(node) => { if (node !== null) node.indeterminate = selected.size > 0 && !allOnPageSelected }}
+            onChange={(event) => { if (event.target.checked) selectPage(); else clearSelection() }}
+          />
+          全选本页
+        </label>
+        <span role="status" aria-live="polite">显示 {items.length} / {total} 条</span>
+      </>}>
+        <div className="nx-list" role="list">
+          {loading && items.length === 0 ? <Skeleton rows={4} />
+          : error !== null ? (
+              <StateBox tone="error" icon="alert" title={'加载失败：' + error} hint="服务可能刚重启，或本地存储暂时不可读。"
+                action={<Btn onClick={reload}>点击重试</Btn>} />
+            )
+          : items.length === 0 ? (
+              <StateBox icon="search" title="没有匹配的记忆"
+                hint={'当前筛选：' + (status === '' ? '全部状态' : (STATUS_LABEL[status] ?? status)) + '。试试放宽筛选，或在会话里说「记住：……」。'}
+                action={<Btn onClick={() => { setStatus(''); setScope(''); setQuery(''); setProject('') }}>清除筛选</Btn>} />
+            )
+          : items.map((item) => (
+              <MemoryRow
+                key={item.id}
+                item={item}
+                selected={selected.has(item.id)}
+                focused={focusedId === item.id}
+                onSelect={toggleSelect}
+                ctxMenu={ctx !== null && ctx.id === item.id ? { open: true, x: ctx.x, y: ctx.y } : undefined}
+                onRowContextMenu={onRowContextMenu}
+                {...(neighbors[item.id] !== undefined ? { neighbors: neighbors[item.id] } : {})}
+                {...(conflictStatementOf(item) !== undefined ? { conflictStatement: conflictStatementOf(item) } : {})}
+                neighborsOpen={openIds.has(item.id)}
+                onToggleNeighbors={toggleNeighbors}
+                expandedId={expandedId}
+                onToggleExpand={onToggleExpand}
+                {...(state?.injection !== undefined ? { budgetBytes: state.injection.budgetBytes } : {})}
+                onLoadFull={loadFull}
+                onSave={saveEdit}
+                onConfirm={confirmOne}
+                onTogglePin={togglePin}
+                onArchive={archiveRow}
+                onRestore={restoreOne}
+                onDelete={deleteRow}
+                onPurge={purgeRow}
+                onMerge={mergeInto}
+              />
+            ))}
+          {items.length > 0 && items.length < total && (
+            <div className="nx-loadmore">
+              <Btn disabled={loadingMore} onClick={() => void loadMore()}>
+                {loadingMore ? '加载中…' : '加载更多（还有 ' + String(total - items.length) + ' 条）'}
+              </Btn>
             </div>
-          )
-        : items.length === 0 ? (
-            <div className="nx-empty">
-              <div className="nx-empty-title">这里还没有记忆。</div>
-              <div className="nx-empty-hint">在会话里说「记住：……」，我会自动提炼；也可以点右上角「新增」手动写入。</div>
+          )}
+          {selected.size > 0 && (
+            <div className="nx-batch" role="region" aria-label="批量操作">
+              <span className="nx-batch-count">已选 {selected.size} 条</span>
+              <Btn kind="primary" onClick={batchConfirmActive}>确认</Btn>
+              {batchConfirm === 'archive'
+                ? <><Btn kind="danger" onClick={batchArchive}>确认归档 {selected.size} 条</Btn><Btn onClick={() => setBatchConfirm(null)}>取消</Btn></>
+                : <Btn kind="danger" onClick={() => setBatchConfirm('archive')}>归档</Btn>}
+              {batchConfirm === 'trash'
+                ? <><Btn kind="danger" onClick={batchTrash}>确认移入回收站 {selected.size} 条</Btn><Btn onClick={() => setBatchConfirm(null)}>取消</Btn></>
+                : <Btn onClick={() => setBatchConfirm('trash')}>移入回收站</Btn>}
+              <Btn onClick={clearSelection}>取消选择</Btn>
             </div>
-          )
-        : items.map((item) => (
-            <MemoryRow
-              key={item.id}
-              item={item}
-              selected={selected.has(item.id)}
-              focused={focusedId === item.id}
-              onSelect={toggleSelect}
-              ctxMenu={ctx !== null && ctx.id === item.id ? { open: true, x: ctx.x, y: ctx.y } : undefined}
-              onRowContextMenu={onRowContextMenu}
-              {...(neighbors[item.id] !== undefined ? { neighbors: neighbors[item.id] } : {})}
-              neighborsOpen={openIds.has(item.id)}
-              onToggleNeighbors={toggleNeighbors}
-              expandedId={expandedId}
-              onToggleExpand={setExpandedId}
-              {...(state?.injection !== undefined ? { budgetBytes: state.injection.budgetBytes } : {})}
-              onLoadFull={loadFull}
-              onSave={saveEdit}
-              onConfirm={confirmOne}
-              onTogglePin={togglePin}
-              onArchive={archiveRow}
-              onRestore={restoreOne}
-              onDelete={deleteRow}
-              onPurge={purgeRow}
-              onMerge={mergeInto}
-            />
-          ))}
-        {items.length > 0 && items.length < total && (
-          <div className="nx-loadmore">
-            <Btn disabled={loadingMore} onClick={() => void loadMore()}>
-              {loadingMore ? '加载中…' : '加载更多（还有 ' + String(total - items.length) + ' 条）'}
-            </Btn>
-          </div>
-        )}
-        {selected.size > 0 && (
-          <div className="nx-batch" role="region" aria-label="批量操作">
-            <span className="nx-batch-count">已选 {selected.size} 条</span>
-            <Btn kind="primary" onClick={batchConfirmActive}>确认</Btn>
-            {batchConfirm === 'archive'
-              ? <><Btn kind="danger" onClick={batchArchive}>确认归档 {selected.size} 条</Btn><Btn onClick={() => setBatchConfirm(null)}>取消</Btn></>
-              : <Btn kind="danger" onClick={() => setBatchConfirm('archive')}>归档</Btn>}
-            {batchConfirm === 'trash'
-              ? <><Btn kind="danger" onClick={batchTrash}>确认移入回收站 {selected.size} 条</Btn><Btn onClick={() => setBatchConfirm(null)}>取消</Btn></>
-              : <Btn onClick={() => setBatchConfirm('trash')}>移入回收站</Btn>}
-            <Btn onClick={clearSelection}>取消选择</Btn>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      </ListCard>
 
       <footer className="nx-footer">
         {state !== null && (
