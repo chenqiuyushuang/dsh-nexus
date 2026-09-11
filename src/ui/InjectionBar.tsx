@@ -55,7 +55,7 @@ function estimateLineBytes(entry: InjectionEntryView, statement: string): number
   return new TextEncoder().encode(line).length
 }
 
-export function InjectionBar({ truth, projects, project, counts, detail, onProject, onPin, onAssign, onScope, onSave, onLoad, onConfirm, defaultOpen }: {
+export function InjectionBar({ truth, projects, project, counts, trailing, detail, onProject, onPin, onAssign, onScope, onSave, onLoad, onConfirm, defaultOpen }: {
   /** 初始展开（测试与深链用）。 */
   defaultOpen?: boolean
   truth?: InjectionTruthView
@@ -71,6 +71,8 @@ export function InjectionBar({ truth, projects, project, counts, detail, onProje
   onConfirm: (id: string) => void
   /** 合并进状态条的计数（窄栏里省掉一整行 chips）。 */
   counts?: { active: number; pending: number; conflicts: number }
+  /** 尾部插槽：窄栏把工具条里的入口接过来，填补状态条第二行。 */
+  trailing?: ReactNode
   /** 摘要行（在用 N 条 / 跨项目分布 / 今日流量）：窄栏里移进展开区，别在顶部堆三层数字。 */
   detail?: string
 }): ReactNode {
@@ -158,6 +160,7 @@ export function InjectionBar({ truth, projects, project, counts, detail, onProje
         {counts !== undefined && (
           <span className="nx-status-counts">在用 {counts.active} · 待确认 {counts.pending} · 冲突 {counts.conflicts}</span>
         )}
+        {trailing}
         {(truth.archived ?? 0) > 0 && <span className="nx-inject-badge">已归档 {truth.archived}</span>}
         <span className="nx-inject-caret" aria-hidden="true">{open ? '收起' : '为什么'}</span>
       </button>

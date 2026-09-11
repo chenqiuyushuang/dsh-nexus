@@ -102,7 +102,8 @@ export function NexusPanel(): React.ReactNode {
   // B4：注入真相要针对某个项目计算（项目记忆按归属隔离）
   const [project, setProject] = useState('')
   const [scope, setScope] = useState('')
-  const [status, setStatus] = useState('')
+  // 默认只看「在用」：否则一打开就是几十条已归档垃圾排在最前（用户实拍反馈「不好看」的主因之一）
+  const [status, setStatus] = useState('active')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [neighbors, setNeighbors] = useState<Record<string, { loading: boolean; list: Neighbor[] | null; error?: string }>>({})
@@ -407,6 +408,7 @@ export function NexusPanel(): React.ReactNode {
           projects={state.projects ?? []}
           project={state.project ?? project}
           counts={{ active: state.active, pending: state.pending, conflicts: state.conflicts }}
+          {...(embedded ? { trailing: <Btn onClick={() => setShowDecisions(!showDecisions)}>{showDecisions ? '收起日志' : '决策日志'}</Btn> } : {})}
           detail={detailLine}
           {...injectionActions}
         />
@@ -479,8 +481,13 @@ export function NexusPanel(): React.ReactNode {
         ]} />
         <span className="nx-tool-more"><Btn onClick={reload}>刷新</Btn></span>
         <Btn kind="primary" onClick={startAdd}>新增</Btn>
-        <Btn onClick={() => setShowDecisions(!showDecisions)}>{showDecisions ? '收起决策日志' : '决策日志'}</Btn>
-        <span className="nx-count" role="status" aria-live="polite">显示 {items.length} / 共 {total} 条</span>
+        {!embedded && <Btn onClick={() => setShowDecisions(!showDecisions)}>{showDecisions ? '收起决策日志' : '决策日志'}</Btn>}
+        {/* 窄栏里计数要短：完整文案 99px 会把工具条挤出一整行 */}
+        <span className="nx-count" role="status" aria-live="polite">
+          {embedded
+            ? (items.length < total ? String(items.length) + ' / ' + String(total) + ' 条' : String(total) + ' 条')
+            : '显示 ' + String(items.length) + ' / 共 ' + String(total) + ' 条'}
+        </span>
         {items.length > 0 && <span className="nx-tool-more"><Btn onClick={selectPage}>全选本页</Btn></span>}
       </div>
       <div className="nx-decisions">

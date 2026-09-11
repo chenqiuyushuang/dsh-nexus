@@ -111,6 +111,8 @@ try {
       panelReportedHeight: window.__panelHeight ?? null,
       sections: { header: box('.nx-header'), scopebar: box('.nx-scopebar'), scopeline: box('.nx-scopeline'), inject: box('.nx-inject'), noise: box('.nx-banner.noise'), stats: box('.nx-stats'), toolbar: box('.nx-toolbar'), settings: box('.nx-settings'), list: box('.nx-list'), footer: box('.nx-footer') },
       toolbarRows: toolbar ? new Set([...toolbar.children].map((c) => Math.round(c.getBoundingClientRect().top))).size : 0,
+      toolbarItems: toolbar ? [...toolbar.children].map((c) => ((c.textContent || c.getAttribute('aria-label') || c.className).trim().slice(0, 10) + ':' + Math.round(c.getBoundingClientRect().width) + '@' + Math.round(c.getBoundingClientRect().top))) : [],
+      statusItems: (() => { const bar = doc.querySelector('.nx-inject-bar'); return bar ? [...bar.children].map((c) => ((c.textContent || '').trim().slice(0, 10) + ':' + Math.round(c.getBoundingClientRect().width) + '@' + Math.round(c.getBoundingClientRect().top))) : [] })(),
       rowHeight: first ? Math.round(first.getBoundingClientRect().height) : null,
       pitch: rows.length > 1 ? Math.round(rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top) : null,
       listH: list ? Math.round(list.getBoundingClientRect().height) : null,
