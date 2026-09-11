@@ -10,6 +10,7 @@ import type { ParameterSchemaSpec } from '@deepseek-ai/dsh-tools'
 import type { NexusFacility } from './facility.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { classifyToolMemory, evaluateHardReject } from './extraction.ts'
+import { memoryWriteRejection } from './noise.ts'
 import { rejectId } from './atom.ts'
 import type { ResolvedConfig } from './config.ts'
 
@@ -39,6 +40,9 @@ export function installTools(ctx: Context, facility: NexusFacility, resolved: Re
     execute: async (args: { text: string; project?: string }) => {
       const verdict = evaluateHardReject(args.text);
       if (verdict.reject) return '已拒绝：' + verdict.reason;
+      // 记忆是一句话，不是文档：模型写入同样受长度与结构门控（实测 6 条 2KB 提示词被写进来）
+      const refused = memoryWriteRejection(args.text);
+      if (refused !== undefined) return '已拒绝：' + refused;
       const cls = classifyToolMemory(args.text, args.project);
       const atom = await facility.saveAtom({
         fp: 'tool_' + hash16(args.text),

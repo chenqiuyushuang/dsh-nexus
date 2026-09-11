@@ -13,6 +13,38 @@ const SUBAGENT_PREFIX = /^(?:background\s+subagent|agent)\s+[0-9a-f]{8}-[0-9a-f]
 /** 子代理模板用语。 */
 const SUBAGENT_PHRASE = /(?:will do no further work|sent a message:|finished and will do no further)/i
 
+/** DSH 注入到会话里的系统通知（子代理/后台任务回执）—— 不是用户说的话。 */
+export function isSystemNotificationText(text: string): boolean {
+  const head = text.trim().slice(0, 240)
+  if (/^background\s+(?:job|subagent)\s/i.test(head)) return true
+  if (/^agent\s+[0-9a-f]{8}-/i.test(head) && /sent a message:/i.test(head)) return true
+  if (/finished and will do no further work/i.test(head)) return true
+  return false
+}
+
+/** 文档/提示词类长文（不是「一句话」的记忆）：长度 + Markdown 结构 + 角色提示词特征。 */
+export function isDocumentLikePrompt(atom: NoiseCandidate): boolean {
+  const text = (atom.subject + '\n' + atom.statement).trim()
+  if (text.length < 400) return false
+  if (!/##\s/.test(text)) return false
+  return /你是\*\*|##\s*(?:背景|任务|输出格式|约束|评分)/.test(text)
+}
+
+/** 统一的「疑似无效记忆」判定：子代理回执 + 文档/提示词长文。 */
+export function isLikelyJunkMemory(atom: NoiseCandidate): boolean {
+  return isLikelySubagentNoise(atom) || isDocumentLikePrompt(atom)
+}
+/** 一条记忆的长度上限（一句话规则）；超过它就不是「记忆」而是文档。 */
+export const MAX_MEMORY_CHARS = 600
+
+/** 写入前的内容门控：返回拒绝原因；undefined 表示通过。 */
+export function memoryWriteRejection(text: string): string | undefined {
+  const trimmed = text.trim()
+  if (trimmed.length > MAX_MEMORY_CHARS) return '一条记忆应当是一句话（≤ ' + String(MAX_MEMORY_CHARS) + ' 字），长文请放进项目文档或面板手动新增'
+  if (isDocumentLikePrompt({ subject: trimmed.slice(0, 24), statement: trimmed })) return '看起来是提示词/文档，不是关于用户或项目的事实'
+  return undefined
+}
+
 export interface NoiseCandidate {
   readonly subject: string
   readonly statement: string
@@ -33,7 +65,7 @@ export function collectNoise<T extends NoiseCandidate & { id: string }>(atoms: r
   const ids: string[] = []
   let count = 0
   for (const atom of atoms) {
-    if (!isLikelySubagentNoise(atom)) continue
+    if (!isLikelyJunkMemory(atom)) continue
     count += 1
     if (ids.length < limit) ids.push(atom.id)
   }

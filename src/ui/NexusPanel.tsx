@@ -374,7 +374,7 @@ export function NexusPanel(): React.ReactNode {
 
       {state?.noise !== undefined && state.noise.count > 0 && (
         <div className="nx-banner noise" role="status">
-          <span>检测到 <b>{state.noise.count}</b> 条子代理噪音（子代理提示词被写进了记忆，会挤占 1KB 注入预算）。</span>
+          <span>检测到 <b>{state.noise.count}</b> 条疑似无效记忆（子代理回执或提示词被写成了记忆，会挤占 1KB 注入预算）。</span>
           {noiseConfirm
             ? <><Btn kind="danger" onClick={cleanNoise}>确认归档 {state.noise.count} 条</Btn><Btn onClick={() => setNoiseConfirm(false)}>取消</Btn></>
             : <Btn onClick={() => setNoiseConfirm(true)}>一键清理</Btn>}

@@ -22,6 +22,7 @@ import { DEFAULT_EXTRACT_BUDGET, dailyBudgetRemaining, extractTokensUsedToday, p
 import type { CapturedTurnEvent } from './processors.ts'
 import { buildIndex, DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
 import { evaluateHardReject, extractFromStateEvent, extractFromToolFailure, extractFromTrigger, TOOL_FAILURE_RE } from './extraction.ts'
+import { isSystemNotificationText } from './noise.ts'
 import { recallId, rejectId } from './atom.ts'
 import { hash16 } from './extraction.ts'
 
@@ -182,6 +183,9 @@ export function installScheduler(ctx: Context, facility: NexusFacility, config: 
       if (type === 'user/message') {
         const text = textOfUser(data)
         if (text === undefined) return
+        // P0：DSH 把子代理/后台任务回执也作为 user 消息注入父会话，
+        // 它们不是用户说的话（实测 22 条噪音全来自这里）
+        if (isSystemNotificationText(text)) return
         for (const part of splitLong(text, 4000)) {
           buffer(session).events.push({ seq: seqOf(event), role: 'user', text: part, at: Date.now() })
         }
