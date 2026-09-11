@@ -93,6 +93,19 @@ try {
     await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const line = doc.querySelector(".nx-statement.folded"); if (line) line.click(); return !!line })()' })
     await new Promise((r) => setTimeout(r, 600))
   }
+  // 场景：键盘导航焦点环（↑↓ 到第 2 行）
+  if (process.argv.includes('--nav')) {
+    // 键盘事件必须派发到 iframe 的 window（Input.dispatchKeyEvent 只到顶层文档，面板收不到）
+    for (let i = 0; i < 2; i += 1) {
+      await send('Runtime.evaluate', { expression: '(() => { const w = document.getElementById("f").contentWindow; w.dispatchEvent(new w.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })); return true })()' })
+      await new Promise((r) => setTimeout(r, 250))
+    }
+  }
+  // 场景：右键菜单（在第二行上派发 contextmenu）
+  if (process.argv.includes('--ctx')) {
+    await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const row = doc.querySelectorAll(".nx-row")[1]; if (!row) return false; const r = row.getBoundingClientRect(); row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: Math.round(r.left + 20), clientY: Math.round(r.top + 16) })); return true })()' })
+    await new Promise((r) => setTimeout(r, 700))
+  }
   if (process.argv.includes('--select-first')) {
     await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const row = doc.querySelector(".nx-row"); const cb = doc.querySelector(".nx-check"); window.__beforeTop = row ? Math.round(row.getBoundingClientRect().top) : null; if (cb) cb.click(); return window.__beforeTop })()' })
     await new Promise((r) => setTimeout(r, 700))

@@ -1,7 +1,8 @@
 /** Nexus 记忆面板：独立 /nexus 页与 DSH 设置面板 iframe 共用的单一实现（React）。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Chip, Btn, Select } from './components.tsx'
-import { MemoryRow } from './MemoryRow.tsx'
+import { Disclosure, MemoryRow } from './MemoryRow.tsx'
 import type { MemoryRowItem } from './MemoryRow.tsx'
 import { isPlainSlash, shouldHandleSlashKey } from './keyboard.ts'
 import { ScopeBar } from './ScopeBar.tsx'
@@ -125,11 +126,17 @@ export function NexusPanel(): React.ReactNode {
   const [settings, setSettings] = useState<Thresholds | null>(null)
   const [autoT, setAutoT] = useState('0.9')
   const [modelT, setModelT] = useState('0.95')
+  // 设置区常驻折叠条（参考稿）：标题永远可见，默认收起，点标题整条切换
   const [showSettings, setShowSettings] = useState(false)
   const [models, setModels] = useState<ModelRow[]>([])
   const [extractSel, setExtractSel] = useState('')
   const [decisions, setDecisions] = useState<Decisions | null>(null)
   const [showDecisions, setShowDecisions] = useState(false)
+  // 右键菜单：坐标由行上报，面板做视口夹取（窄栏里菜单只有 156px 宽）
+  const [ctx, setCtx] = useState<{ id: string; x: number; y: number } | null>(null)
+  // 键盘导航焦点（j/k 与上下键）：只移动焦点环，空格切换勾选
+  const [focusedId, setFocusedId] = useState<string | null>(null)
+  const lastClickedId = useRef<string | null>(null)
 
   const load = useCallback(async ({ q, s, st, p }: LoadParams): Promise<void> => {
     setLoading(true)
@@ -187,6 +194,57 @@ export function NexusPanel(): React.ReactNode {
     return () => { window.removeEventListener('keydown', onKey) }
   }, [])
 
+  // 键盘导航：↑/↓（或 j/k）移动焦点环，空格切换勾选，Esc 清焦点。输入框/文本域里不抢键。
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      const el = event.target as { tagName?: string; isContentEditable?: boolean } | null
+      const tag = el?.tagName ?? ''
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable === true) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.key === 'ArrowDown' || event.key === 'j') { event.preventDefault(); navFocus(1); return }
+      if (event.key === 'ArrowUp' || event.key === 'k') { event.preventDefault(); navFocus(-1); return }
+      if (event.key === 'Escape') { setCtx(null); setFocusedId(null); return }
+      if (event.key === ' ' && focusedId !== null) {
+        event.preventDefault()
+        setSelected((prev) => { const copy = new Set(prev); if (copy.has(focusedId)) copy.delete(focusedId); else copy.add(focusedId); return copy })
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  })
+
+  // 右键菜单的关闭：点击他处 / 滚动 / 缩放（Esc 在上面统一处理）
+  useEffect(() => {
+    if (ctx === null) return
+    const onDown = (event: MouseEvent): void => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('[data-nx-ctxmenu]') != null) return
+      setCtx(null)
+    }
+    const onScroll = (): void => { setCtx(null) }
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('scroll', onScroll, true)
+    window.addEventListener('resize', onScroll)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('scroll', onScroll, true)
+      window.removeEventListener('resize', onScroll)
+    }
+  }, [ctx])
+
+  /** 右键落在哪一行 → 打开菜单（坐标夹取到视口内，窄栏右侧不会溢出）。 */
+  const onRowContextMenu = useCallback((id: string, event: { clientX: number; clientY: number; preventDefault: () => void }): void => {
+    event.preventDefault()
+    const width = 168
+    const height = 240
+    setCtx({
+      id,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - height)),
+    })
+    setFocusedId(id)
+  }, [])
+
   // B2：翻页追加（服务端 offset/total），筛选变化时回到第一页
   const loadMore = async (): Promise<void> => {
     if (loadingMore || items.length >= total) return
@@ -242,10 +300,35 @@ export function NexusPanel(): React.ReactNode {
     runAction('/nexus/api/memory/purge', { ids: [id] }, '已彻底清除 1 条（内容、关系边、同句拒绝记录一并删除）')
 
   // B3 批量操作：选中集合走 ids[]，成功后可撤销（归档连黑名单一起回滚）
-  const toggleSelect = (id: string, next: boolean): void => {
+  /** Shift 连选：锚点是上一次点过的行，范围取当前页可见顺序（跨页连选没有一致语义，不做）。 */
+  const shiftRange = (id: string): void => {
+    const from = lastClickedId.current
+    lastClickedId.current = id
+    if (from === null || from === id) return
+    const a = items.findIndex((item) => item.id === from)
+    const b = items.findIndex((item) => item.id === id)
+    if (a < 0 || b < 0) return
+    const ids = items.slice(Math.min(a, b), Math.max(a, b) + 1).map((item) => item.id)
+    setSelected((prev) => { const copy = new Set(prev); for (const one of ids) copy.add(one); return copy })
+    setBatchConfirm(null)
+  }
+  const toggleSelect = (id: string, next: boolean, mods?: { shift?: boolean; meta?: boolean }): void => {
+    if (mods?.shift === true && next) { shiftRange(id); return }
+    lastClickedId.current = id
     setSelected((prev) => { const copy = new Set(prev); if (next) copy.add(id); else copy.delete(id); return copy })
   }
   const clearSelection = (): void => { setSelected(new Set()); setBatchConfirm(null) }
+  /** 键盘上下导航：只移动焦点环（勾选仍由空格/复选框负责，避免方向键误选）。 */
+  const navFocus = (delta: number): void => {
+    if (items.length === 0) return
+    const index = items.findIndex((item) => item.id === focusedId)
+    const nextIndex = index < 0 ? (delta > 0 ? 0 : items.length - 1) : Math.min(items.length - 1, Math.max(0, index + delta))
+    const target = items[nextIndex]
+    if (target === undefined) return
+    setFocusedId(target.id)
+    const node = document.querySelector<HTMLElement>('[data-nx-row="' + target.id + '"]')
+    if (typeof node?.scrollIntoView === 'function') node.scrollIntoView({ block: 'nearest' })
+  }
   // P0 子代理噪音清理：归档 + 黑名单（同句不再复活），5 秒内可撤销
   const cleanNoise = (): void => {
     const ids = state?.noise?.ids ?? []
@@ -381,7 +464,8 @@ export function NexusPanel(): React.ReactNode {
           <h1 className="nx-title">记忆</h1>
           <p className="nx-sub">查看和管理本会话沉淀的记忆。</p>
         </div>
-        <button className="nx-btn" onClick={() => setShowSettings((s) => !s)}>{showSettings ? '收起设置' : '设置'}</button>
+        {/* 设置入口改由常驻的「设置」折叠条承担（原来这里一个按钮 + 面板里另有一块，两处入口） */}
+        <button className="nx-btn" onClick={() => setShowSettings((s) => !s)} aria-expanded={showSettings}>{showSettings ? '收起设置' : '设置'}</button>
       </header>
 
       {state !== null && state.active >= 20 && <ScopeBar counts={state.byScope} />}
@@ -417,9 +501,13 @@ export function NexusPanel(): React.ReactNode {
           <Chip key={label} label={label} value={value} tone={tone} />
         ))}
       </div>
-      {showSettings && settings !== null && (
-        <div className="nx-settings">
-          <div className="nx-settings-title">置信阈值（记忆自动接受的门槛）</div>
+      {settings !== null && (
+        <div className={'nx-settings' + (showSettings ? ' open' : '')}>
+          <button type="button" className="nx-settings-head" aria-expanded={showSettings} onClick={() => setShowSettings((v) => !v)}>
+            <span className="nx-settings-title">置信阈值（记忆自动接受的门槛）</span>
+            <svg className="nx-settings-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+          </button>
+          <Disclosure open={showSettings} className="nx-settings-body">
           <div className="nx-threshold">
             <label className="nx-threshold-field"><span>自动接受（用户明示/工具）</span><input type="number" min={0} max={1} step={0.01} className="nx-search nx-threshold-input" value={autoT} onChange={(e) => setAutoT(e.target.value)} placeholder="0-1" /></label>
             <label className="nx-threshold-field"><span>模型推断（LLM 提取）</span><input type="number" min={0} max={1} step={0.01} className="nx-search nx-threshold-input" value={modelT} onChange={(e) => setModelT(e.target.value)} placeholder="0-1" /></label>
@@ -437,6 +525,7 @@ export function NexusPanel(): React.ReactNode {
           <div className="nx-settings-actions">
             <Btn kind="primary" onClick={() => void saveSettings()}>保存设置</Btn>
           </div>
+          </Disclosure>
         </div>
       )}
 
@@ -526,7 +615,13 @@ export function NexusPanel(): React.ReactNode {
 
       <div className="nx-list" role="list">
         {loading && items.length === 0 ? <div className="nx-empty">加载中…</div>
-        : error !== null ? <div className="nx-empty">加载失败：{error}</div>
+        : error !== null ? (
+            <div className="nx-empty">
+              <div className="nx-empty-title">加载失败：{error}</div>
+              {/* 原来只有一行字，没有出路；重试是最便宜的补救 */}
+              <Btn onClick={reload}>点击重试</Btn>
+            </div>
+          )
         : items.length === 0 ? (
             <div className="nx-empty">
               <div className="nx-empty-title">这里还没有记忆。</div>
@@ -538,7 +633,10 @@ export function NexusPanel(): React.ReactNode {
               key={item.id}
               item={item}
               selected={selected.has(item.id)}
+              focused={focusedId === item.id}
               onSelect={toggleSelect}
+              ctxMenu={ctx !== null && ctx.id === item.id ? { open: true, x: ctx.x, y: ctx.y } : undefined}
+              onRowContextMenu={onRowContextMenu}
               {...(neighbors[item.id] !== undefined ? { neighbors: neighbors[item.id] } : {})}
               neighborsOpen={openIds.has(item.id)}
               onToggleNeighbors={toggleNeighbors}

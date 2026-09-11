@@ -49,8 +49,11 @@ describe('B3 折叠行', () => {
     // 标签行只在展开后出现（折叠态用色条 + 状态字表达）
     expect(html).not.toContain('nx-tags')
     expect(html).toContain('活跃')
-    expect(html).not.toContain('ID:')
-    expect(html).not.toContain('权重:')
+    // 展开区改为 Grid 行动画（0fr↔1fr）后内容常驻 DOM：可见性与可访问性交给 inert，
+    // 因此断言从"文字不存在"改成"被 inert 收起"，这才是真正的不暴露（读屏 + Tab 都进不去）。
+    expect(html).toContain('nx-disclosure nx-row-more')
+    expect(html).not.toContain('nx-disclosure open nx-row-more')
+    expect(html).toContain('inert=""')
     expect(html).not.toContain('归档')
     expect(html).not.toContain('移入回收站')
     // B7 验收：单行红色按钮 ≤1（折叠态实际为 0，危险操作都在「⋯」菜单里）
@@ -74,10 +77,27 @@ describe('B3 折叠行', () => {
     expect(html).toContain('nx-row selected')
   })
 
-  it('冲突/重复提示只在展开后出现（折叠态用状态标签表达）', () => {
+  it('冲突/重复提示只在展开后可见（折叠态由 inert 收起）', () => {
     const folded = renderRow({ status: 'pending', conflictWith: 'nex_other000000001', reviewNote: 'suspected-duplicate' })
-    expect(folded).not.toContain('疑似与记忆')
+    expect(folded).toContain('inert=""')
+    expect(folded).not.toContain('nx-disclosure open')
     const open = renderRow({ status: 'pending', conflictWith: 'nex_other000000001', reviewNote: 'suspected-duplicate' }, { expanded: true })
     expect(open).toContain('疑似与记忆 nex_other000000001 重复（近义）')
+    expect(open).toContain('nx-disclosure open nx-row-more')
+    // 只看展开区那一段：编辑区（未进入编辑）自身永远是 inert 的
+    expect(open.slice(open.indexOf('nx-disclosure open nx-row-more'))).not.toContain('inert=""')
+  })
+
+  it('折叠行给置信度圆点（颜色 + aria-label 双通道，不靠颜色单独传达）', () => {
+    expect(renderRow({ confidence: 0.95 })).toContain('nx-conf high')
+    expect(renderRow({ confidence: 0.7 })).toContain('nx-conf mid')
+    expect(renderRow({ confidence: 0.2 })).toContain('nx-conf low')
+    expect(renderRow({ confidence: 0.95 })).toContain('aria-label="置信度 95%"')
+  })
+
+  it('勾选框给出 Shift/Cmd 连选提示并回报修饰键状态', () => {
+    const html = renderRow()
+    expect(html).toContain('Shift 连选')
+    expect(html).toContain('nx-check')
   })
 })

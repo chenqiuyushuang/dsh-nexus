@@ -5,7 +5,8 @@
  * 为什么要拆出来：面板原来的行同时塞 7 个按钮 + 元信息 + 提示，3000 字的记忆直接顶满一屏。
  * 拆成组件后折叠/展开/菜单/二次确认都能被渲染测试覆盖（见 tests/panel-list.test.ts）。
  */
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import { Btn, Select, Tag } from './components.tsx'
 import { nextMenuIndex } from './keyboard.ts'
@@ -31,6 +32,20 @@ export interface MemoryRowItem {
 }
 export interface NeighborView { edge?: string; atom?: { statement: string }; other?: string }
 export interface NeighborState { loading: boolean; list: NeighborView[] | null; error?: string }
+/** 受控展开容器（grid-template-rows 0fr↔1fr）：收起到 0、展开到内容自然高度，都不写死像素。 */
+export function Disclosure({ open, className, children }: { open: boolean; className?: string; children: ReactNode }): ReactNode {
+  // 收起时只做视觉隐藏是不够的：内容仍在 DOM 里，读屏与 Tab 还会摸到它。
+  // inert 一次性关掉「可见 + 可聚焦 + 可访问树」，比 aria-hidden + 手动 tabIndex={-1} 可靠。
+  const inner: Record<string, unknown> = { className: 'nx-disclosure-inner' }
+  if (!open) inner.inert = ''
+  return (
+    <div className={'nx-disclosure' + (open ? ' open' : '') + (className !== undefined ? ' ' + className : '')}>
+      <div {...inner}>{children}</div>
+    </div>
+  )
+}
+/** 右键菜单坐标（panel 持有，行只负责把事件报上来）。 */
+export interface RowContextMenu { open: boolean; x: number; y: number }
 
 const SCOPE_NAME: Record<string, string> = { user: '跨项目', project: '本项目', episode: '本会话' }
 const SLOT_NAME: Record<string, string> = {
@@ -39,13 +54,22 @@ const SLOT_NAME: Record<string, string> = {
 const STATUS_NAME: Record<string, string> = {
   pending: '待确认', 'needs-review': '冲突', active: '活跃', archived: '已归档', superseded: '已取代', rejected: '已拒绝',
 }
+/** 置信度圆点：<60% 红 / 60-89% 琥珀 / ≥90% 绿；颜色 + title 双通道（不靠颜色单独传达）。 */
+function ConfDot({ confidence }: { confidence?: number }): ReactNode {
+  const pct = Math.round((confidence ?? 0) * 100)
+  const tone = pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low'
+  return <span className={'nx-conf ' + tone} title={'置信度 ' + String(pct) + '%'} aria-label={'置信度 ' + String(pct) + '%'} role="img" />
+}
+
 const FOLDED_HINT = '点击展开全文'
 const COLLAPSE_HINT = '点击收起'
 
 export interface MemoryRowProps {
   item: MemoryRowItem
   selected: boolean
-  onSelect: (id: string, next: boolean) => void
+  /** 键盘导航焦点环（panel 的 ↑/↓ 导航）。 */
+  focused?: boolean
+  onSelect: (id: string, next: boolean, mods?: { shift?: boolean; meta?: boolean }) => void
   /** 初始展开（测试/深链用）。 */
   defaultExpanded?: boolean
   /** 受控展开：面板用它实现「同时只展开一条」（手风琴），避免长记忆把列表视口吃光。 */
@@ -66,11 +90,15 @@ export interface MemoryRowProps {
   onDelete: (id: string) => Promise<boolean>
   onPurge: (id: string) => Promise<boolean>
   onMerge: (dropId: string, keepId: string) => void
+  /** 右键菜单状态（panel 传；不传则只支持行内「⋯」）。 */
+  ctxMenu?: RowContextMenu
+  onRowContextMenu?: (id: string, event: { clientX: number; clientY: number; preventDefault: () => void }) => void
 }
 
 export function MemoryRow({
-  item, selected, onSelect, defaultExpanded, expandedId, onToggleExpand, neighbors, neighborsOpen, onToggleNeighbors, budgetBytes = Number.NaN,
+  item, selected, focused = false, onSelect, defaultExpanded, expandedId, onToggleExpand, neighbors, neighborsOpen, onToggleNeighbors, budgetBytes = Number.NaN,
   onLoadFull, onSave, onConfirm, onTogglePin, onArchive, onRestore, onDelete, onPurge, onMerge,
+  ctxMenu, onRowContextMenu,
 }: MemoryRowProps): ReactNode {
   const [expandedLocal, setExpandedLocal] = useState(defaultExpanded === true)
   // 受控优先（面板传 expandedId）；未受控时用本地状态（组件单测与独立使用）
@@ -123,8 +151,39 @@ export function MemoryRow({
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setExpanded(next) }
   }
 
+  // 菜单项只写一份：行内「⋯」与右键菜单共用（两处行为不一致是这类菜单最常见的 bug）。
+  // 注意这里不用 role/onKeyDown——由各自的容器负责（行内 .nx-menu、右键 portal .nx-ctxmenu）。
+  const menuItems: ReactNode[] = [
+    !editing ? <button key="edit" type="button" role="menuitem" className="nx-menu-item" onClick={() => void startEdit()}>编辑</button> : null,
+    <button key="pin" type="button" role="menuitem" className="nx-menu-item" onClick={() => { onTogglePin(item); closeMenu() }}>
+      {item.pinned === true ? '取消置顶' : '置顶'}</button>,
+    item.status === 'pending' && item.conflictWith !== undefined
+      ? <button key="merge" type="button" role="menuitem" className="nx-menu-item" onClick={() => { const keep = item.conflictWith; if (keep !== undefined) onMerge(item.id, keep); closeMenu() }}>合并重复</button>
+      : null,
+    <button key="rel" type="button" role="menuitem" className="nx-menu-item" onClick={() => { onToggleNeighbors(item.id); closeMenu() }}>
+      {neighborsOpen ? '收起关系' : '关系'}</button>,
+    <span key="sep1" className="nx-menu-sep" aria-hidden="true" />,
+    archivable ? (confirmArchive
+      ? <button key="arch" type="button" role="menuitem" className="nx-menu-item danger" onClick={() => { void onArchive(item.id).then((ok) => { if (ok) closeMenu() }) }}>确认归档（同句不再自动记住）</button>
+      : <button key="arch" type="button" role="menuitem" className="nx-menu-item danger" onClick={() => setConfirmArchive(true)}>归档</button>) : null,
+    item.status !== 'archived' ? (confirmDelete
+      ? <button key="del" type="button" role="menuitem" className="nx-menu-item danger" onClick={() => { void onDelete(item.id).then((ok) => { if (ok) closeMenu() }) }}>确认移入回收站</button>
+      : <button key="del" type="button" role="menuitem" className="nx-menu-item danger" onClick={() => setConfirmDelete(true)}>移入回收站</button>) : null,
+    item.status === 'archived' ? (inTrash
+      ? (confirmPurge
+          ? <button key="purge" type="button" role="menuitem" className="nx-menu-item danger" onClick={() => { void onPurge(item.id).then((ok) => { if (ok) closeMenu() }) }}>确认彻底清除</button>
+          : <Fragment key="trash-actions"><button type="button" role="menuitem" className="nx-menu-item" onClick={() => { onRestore(item.id); closeMenu() }}>恢复</button>
+            <button type="button" role="menuitem" className="nx-menu-item danger" onClick={() => setConfirmPurge(true)}>彻底清除</button></Fragment>)
+      : <span key="sys" className="nx-menu-note">系统归档（不可彻底清除）</span>) : null,
+  ]
+
   return (
-    <div className={'nx-row' + (selected ? ' selected' : '') + (expanded ? ' open' : '')} role="listitem">
+    <div
+      className={'nx-row' + (selected ? ' selected' : '') + (expanded ? ' open' : '') + (focused ? ' focused' : '')}
+      role="listitem"
+      data-nx-row={item.id}
+      onContextMenu={(event) => { onRowContextMenu?.(item.id, event) }}
+    >
       <div className="nx-row-head">
         <span className={'nx-sbar scope-' + item.scope} aria-hidden="true" />
         {/* 折叠态没有标签行：作用域不能只由颜色传达（WCAG 1.4.1） */}
@@ -134,8 +193,16 @@ export function MemoryRow({
           className="nx-check"
           checked={selected}
           aria-label={'选择：' + item.subject}
-          onChange={(event) => onSelect(item.id, event.target.checked)}
+          title="Shift 连选 · Cmd/Ctrl 加选"
+          onChange={(event) => {
+            const native = event.nativeEvent as { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean }
+            onSelect(item.id, event.target.checked, {
+              shift: native.shiftKey === true, meta: native.metaKey === true || native.ctrlKey === true,
+            })
+          }}
         />
+        {/* 置信度圆点：折叠态唯一能承载"这条可不可信"的位置。颜色 + title/aria-label 双通道（WCAG 1.4.1） */}
+        {!showTags && <ConfDot confidence={item.confidence} />}
         {showTags ? (
           <div className="nx-tags">
             <Tag text={SCOPE_NAME[item.scope] ?? item.scope} className="scope" />
@@ -145,7 +212,7 @@ export function MemoryRow({
           </div>
         ) : (
           <>
-            <span className="nx-chevron" aria-hidden="true">▸</span>
+            <svg className="nx-chevron" aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6" /></svg>
             <div
               className="nx-statement folded"
               role="button"
@@ -170,8 +237,8 @@ export function MemoryRow({
         >⋯</button>
       </div>
 
-      {editing && (
-        <div className="nx-edit-wrap">
+      <Disclosure open={editing} className="nx-edit-wrap">
+        <div className="nx-edit-wrap-inner">
           <Select ariaLabel="作用域" value={editScope} onChange={(value) => setEditScope(value)} options={[
             { value: 'project', label: '项目' },
             { value: 'user', label: '个人' },
@@ -182,10 +249,10 @@ export function MemoryRow({
             <Btn onClick={() => setEditing(false)}>取消</Btn>
           </div>
         </div>
-      )}
+      </Disclosure>
 
-      {expanded && !editing && (
-        <div className="nx-row-more">
+      {!editing && (
+        <Disclosure open={expanded} className="nx-row-more">
           {/* 展开内容限高 + 内部滚动（并给键盘焦点，WCAG 2.1.1）：
               不限高的话，一条 400 字的记忆在窄栏里就是 10 行文字墙，把整屏推走 */}
           <div className="nx-statement-open" tabIndex={0} aria-label="记忆全文（可滚动）">
@@ -224,35 +291,28 @@ export function MemoryRow({
             )}
             <span>更新 {new Date(item.updatedAt).toLocaleString()}</span>
           </div>
-        </div>
+        </Disclosure>
       )}
 
       {menuOpen && (
-        <div className="nx-menu" role="menu" ref={menuRef} onKeyDown={onMenuKeyDown}>
-          {!editing && <button type="button" role="menuitem" className="nx-menu-item" onClick={() => void startEdit()}>编辑</button>}
-          <button type="button" role="menuitem" className="nx-menu-item" onClick={() => { onTogglePin(item); closeMenu() }}>
-            {item.pinned === true ? '取消置顶' : '置顶'}</button>
-          {item.status === 'pending' && item.conflictWith !== undefined && (
-            <button type="button" role="menuitem" className="nx-menu-item" onClick={() => { const keep = item.conflictWith; if (keep !== undefined) onMerge(item.id, keep); closeMenu() }}>合并重复</button>
-          )}
-          <button type="button" role="menuitem" className="nx-menu-item" onClick={() => { onToggleNeighbors(item.id); closeMenu() }}>
-            {neighborsOpen ? '收起关系' : '关系'}</button>
-          {archivable && (confirmArchive
-            ? <button type="button" role="menuitem" className="nx-menu-item danger" onClick={() => { void onArchive(item.id).then((ok) => { if (ok) closeMenu() }) }}>确认归档（同句不再自动记住）</button>
-            : <button type="button" role="menuitem" className="nx-menu-item danger" onClick={() => setConfirmArchive(true)}>归档</button>)
-          }
-          {item.status !== 'archived' && (confirmDelete
-            ? <button type="button" role="menuitem" className="nx-menu-item danger" onClick={() => { void onDelete(item.id).then((ok) => { if (ok) closeMenu() }) }}>确认移入回收站</button>
-            : <button type="button" role="menuitem" className="nx-menu-item danger" onClick={() => setConfirmDelete(true)}>移入回收站</button>)
-          }
-          {item.status === 'archived' && (inTrash
-            ? (confirmPurge
-                ? <button type="button" role="menuitem" className="nx-menu-item danger" onClick={() => { void onPurge(item.id).then((ok) => { if (ok) closeMenu() }) }}>确认彻底清除</button>
-                : <><button type="button" role="menuitem" className="nx-menu-item" onClick={() => { onRestore(item.id); closeMenu() }}>恢复</button>
-                  <button type="button" role="menuitem" className="nx-menu-item danger" onClick={() => setConfirmPurge(true)}>彻底清除</button></>)
-            : <span className="nx-menu-note">系统归档（不可彻底清除）</span>)
-          }
-        </div>
+        <div className="nx-menu" role="menu" ref={menuRef} onKeyDown={onMenuKeyDown}>{menuItems}</div>
+      )}
+
+      {/* 右键菜单：portal 到 body，避免被列表 overflow / content-visibility 裁掉 */}
+      {ctxMenu !== undefined && ctxMenu.open && createPortal(
+        <div
+          className="nx-ctxmenu"
+          data-nx-ctxmenu="true"
+          role="menu"
+          aria-label={'记忆操作：' + item.subject}
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          ref={menuRef}
+          onKeyDown={onMenuKeyDown}
+          onContextMenu={(event) => { event.preventDefault() }}
+        >
+          {menuItems}
+        </div>,
+        document.body,
       )}
 
       {neighborsOpen && (

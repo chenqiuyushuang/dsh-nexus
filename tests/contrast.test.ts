@@ -117,6 +117,12 @@ const NON_TEXT: Array<[string, string, string]> = [
   ['作用域色条·跨项目', 'nx-sbar-user', 'nx-bg-card'],
   ['作用域色条·本项目', 'nx-sbar-project', 'nx-bg-card'],
   ['作用域色条·本会话', 'nx-sbar-episode', 'nx-bg-card'],
+  // 置信度圆点：折叠行唯一的价值信号，颜色本身必须达标（8px 的点没有文字兜底）
+  ['置信度圆点·高', 'nx-conf-high', 'nx-bg-card'],
+  ['置信度圆点·中', 'nx-conf-mid', 'nx-bg-card'],
+  ['置信度圆点·低', 'nx-conf-low', 'nx-bg-card'],
+  // 键盘焦点环（inset 2px 实心条）
+  ['键盘焦点环', 'nx-accent', 'nx-bg-card'],
 ]
 
 for (const [mode, aliases] of [['亮色', lightAliases], ['暗色', darkAliases]] as const) {

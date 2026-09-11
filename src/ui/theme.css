@@ -115,6 +115,10 @@ body {
   --nx-sbar-user: var(--nx-static-green-900);
   --nx-sbar-project: var(--nx-static-amber-700);
   --nx-sbar-episode: var(--nx-static-deepseek-600);
+  /* 置信度圆点（8px，非文本 → 需 ≥3:1）：与色条同因同解，绿-500/琥珀-500/红-500 在白底只有 2.3/2.15/3.4 */
+  --nx-conf-high: var(--nx-static-green-900);
+  --nx-conf-mid: var(--nx-static-amber-700);
+  --nx-conf-low: var(--nx-static-red-700);
 }
 
 /* ---- 暗色 alias（design-platform.css body[data-ds-dark-theme] alias） ---- */
@@ -154,6 +158,9 @@ body[data-ds-dark-theme] {
   --nx-sbar-user: var(--nx-static-green-500);
   --nx-sbar-project: var(--nx-static-amber-500);
   --nx-sbar-episode: var(--nx-static-deepseek-400);
+  --nx-conf-high: var(--nx-static-green-500);
+  --nx-conf-mid: var(--nx-static-amber-500);
+  --nx-conf-low: var(--nx-static-red-400);
 }
 
 /* ---- 页面基础 ---- */
@@ -203,6 +210,12 @@ html.embedded .nx-scopebar-track { height: 4px; }
 html.embedded .nx-scopebar-legend { margin-top: 4px; font-size: 11px; gap: 8px; }
 /* 窄栏：折叠行不再显示「活跃」（无信息量，且占掉约 1/4 正文宽度）；异常状态照常显示 */
 html.embedded .nx-line-status.status-active { display: none; }
+/* 窄栏：设置条只在点开时才出现 —— 常驻的折叠条用 44px 触摸目标换 3 行列表，不划算；
+   展开时自身限高 + 内部滚动，避免把列表压到 160px 最小高度以下 */
+html.embedded .nx-settings:not(.open) { display: none; }
+/* 数字输入框不该带放大镜（复用 .nx-search 的样式继承到了背景图标） */
+
+html.embedded .nx-settings-body .nx-disclosure-inner { max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
 /* 窄栏：搜索默认收成放大镜，聚焦后展开 —— 省下一整行工具栏宽度 */
 html.embedded .nx-search {
   flex: 0 0 46px; min-width: 46px; padding-left: 28px;
@@ -210,6 +223,8 @@ html.embedded .nx-search {
   background-repeat: no-repeat; background-position: 8px center;
 }
 html.embedded .nx-search:focus { flex: 1 1 auto; min-width: 120px; }
+/* 数字输入框复用了 .nx-search 的类 → 会继承放大镜背景图标；阈值输入框不需要（且更窄） */
+html.embedded .nx-threshold-input { background-image: none; padding-left: 10px; flex: 0 0 76px; }
 /* 窄栏：刷新与全选本页收进「更多」占位（列表每 15s 自动刷新，全选仍可点勾选框） */
 /* 嵌入态空间紧张：副标题让位给列表 */
 html.embedded .nx-sub { display: none; }
@@ -299,7 +314,8 @@ html.embedded .nx-sub { display: none; }
 .nx-settings-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
 .nx-add { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
 .nx-add .nx-edit { margin: 0; }
-.nx-edit-wrap { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 2px; }
+.nx-edit-wrap { margin: 0; }
+.nx-edit-wrap-inner { display: flex; flex-direction: column; gap: 8px; padding: 8px 0 2px; }
 .nx-edit-wrap .nx-edit { margin: 0; }
 
 /* ---- 列表 ---- */
@@ -422,7 +438,9 @@ html.embedded .nx-sub { display: none; }
 .nx-menu-item:hover { border-color: var(--nx-accent); color: var(--nx-accent-text); }
 .nx-menu-item.danger { color: var(--nx-error-text); border-color: var(--nx-error); }
 .nx-menu-note { align-self: center; font-size: 12px; color: var(--nx-text-tertiary); }
-.nx-row-more { margin-top: 6px; }
+.nx-row-more { margin: 0; }
+/* 子元素的外边距会撑破 0fr（内层 min-content 变大）→ 统一挪到内层容器的 padding */
+.nx-row-more .nx-disclosure-inner { padding-top: 6px; }
 .nx-batch {
   /* 吸底且不在列表上方占位：勾选时列表不下移（原来会把第二行勾选框变成移动靶） */
   position: sticky; bottom: 0; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
@@ -499,6 +517,52 @@ html.embedded .nx-sub { display: none; }
 }
 .nx-footer-meta { margin: 0 0 6px; color: var(--nx-text-tertiary); }
 .nx-footer code { font-family: var(--nx-font-code); }
+
+/* ---- 展开/收起动画（参考稿的 grid-template-rows 技法） ----
+   为什么不用 max-height 动画：max-height 必须写死像素上界，长内容要么被截断、要么动画后半段是空动画；
+   grid-template-rows 的 0fr↔1fr 由浏览器按内容求解，收起到 0、展开到"内容自然高度"，两帧都精确。
+   注意内层必须跟一个 overflow:hidden; min-height:0，否则 0fr 塌不下去（min-content 撑住）。 */
+.nx-disclosure { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .22s ease; }
+.nx-disclosure-inner { overflow: hidden; min-height: 0; }
+.nx-disclosure.open { grid-template-rows: 1fr; }
+/* 可见提示：折叠行左侧 ▸ 旋转 90°（原来展开/收起只有文字变化） */
+.nx-chevron { transition: transform .22s ease; display: inline-block; }
+.nx-row.open .nx-chevron { transform: rotate(90deg); }
+.nx-row.open .nx-statement.folded { color: var(--nx-text-secondary); }
+
+/* ---- 常驻折叠条：设置区（参考稿 settings-panel）----
+   收起时只留标题行（标题永远可见，面板不"凭空多出一块"），点标题整条切换。 */
+.nx-settings { margin: 0 0 10px; padding: 0; background: var(--nx-bg-card);
+  border: 1px solid var(--nx-border-card); border-radius: var(--nx-radius); overflow: hidden; }
+.nx-settings-head {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px;
+  background: transparent; border: 0; color: var(--nx-text); font: inherit; font-size: 12.5px;
+  text-align: left; cursor: pointer;
+}
+.nx-settings-head:hover { background: var(--nx-bg-hover); }
+.nx-settings-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-settings-caret { flex: none; color: var(--nx-text-tertiary); transition: transform .22s ease; }
+.nx-settings.open .nx-settings-caret { transform: rotate(180deg); }
+.nx-settings-body { padding: 0 12px 12px; }
+
+/* ---- 右键菜单（参考稿 context-menu；与行内「⋯」共用同一份菜单项） ---- */
+.nx-ctxmenu { position: fixed; z-index: 60; display: flex; flex-direction: column; gap: 2px;
+  min-width: 156px; padding: 6px; background: var(--nx-bg-card-elevated);
+  border: 1px solid var(--nx-border); border-radius: var(--nx-radius); box-shadow: var(--nx-shadow-lv2); }
+.nx-ctxmenu .nx-menu-item { text-align: left; padding: 6px 10px; }
+.nx-ctxmenu .nx-menu-note { padding: 4px 8px; }
+
+/* ---- 键盘导航焦点环（参考稿 .focused；与 :hover 同形，键盘用户才看得见自己在哪一行） ---- */
+.nx-row.focused { box-shadow: inset 2px 0 0 var(--nx-accent); border-color: var(--nx-accent); }
+/* ---- 错误态重试（原来只有一行字，没有出路） ---- */
+.nx-empty .nx-btn { margin-top: 10px; }
+
+/* ---- 置信度圆点：折叠行唯一的"这条值不值得信"载体 ----
+   颜色不是唯一载体：title/aria-label 给百分数（WCAG 1.4.1）。 ≥3:1 由 --nx-* 文本色保证。 */
+.nx-conf { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--nx-text-muted); margin-right: 2px; }
+.nx-conf.high { background: var(--nx-conf-high); }
+.nx-conf.mid { background: var(--nx-conf-mid); }
+.nx-conf.low { background: var(--nx-conf-low); }
 
 /* 动效尊重系统偏好（前庭功能敏感用户） */
 @media (prefers-reduced-motion: reduce) {
