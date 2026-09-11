@@ -13,7 +13,8 @@ import { deterministCues, hash16 } from './extraction.ts'
 import { summarizeCosts, shouldAutoDegrade } from './cost.ts'
 import { neighborsOf } from './edges.ts'
 import { DEFAULT_EXTRACT_BUDGET } from './budget.ts'
-import { buildIndex, DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
+import { DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
+import { injectionTruth, defaultProjectRef, projectRefs } from './injection-truth.ts'
 
 declare interface NexusWebServer {
   register(route: { kind: "exact"; path: string; handler: (req: unknown, res: unknown) => void | Promise<void> }): () => void;
@@ -44,6 +45,12 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     const store = await facility.store();
     const all = [...store.atomEntries()].map(([, a]) => a);
     const active = all.filter(a => a.status === "active");
+    // B4 注入真相：按运行时同一套规则复算（此前用 buildIndex(active) → 别的项目/归属未知的
+    // 记忆被算成"已注入"，而它们永远不会进上下文）
+    const url = new URL((req as { url?: string }).url ?? "/", "http://localhost");
+    const requested = (url.searchParams.get("project") ?? "").trim();
+    const project = requested !== "" ? requested : defaultProjectRef(all);
+    const truth = injectionTruth(all, { budgetBytes: config_indexBudget(), projectRef: project, conflicted: all.filter(a => a.status === "needs-review").length });
     sendJson(res, 200, {
       active: active.length,
       pending: all.filter(a => a.status === "pending").length,
@@ -52,11 +59,22 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
       // 回收站 = 用户显式移入的（与系统归档区分），UI 需要独立计数
       trash: all.filter(a => a.status === "archived" && a.reviewNote === "user-deleted").length,
       archivedBySystem: all.filter(a => a.status === "archived" && a.reviewNote !== "user-deleted").length,
-      // 注入预算可视化（置顶会不会挤掉别人）
-      injection: (() => {
-        const index = buildIndex(active, config_indexBudget())
-        return { budgetBytes: config_indexBudget(), lines: index.lines, omitted: index.omitted, pinned: active.filter(a => a.pinned).length }
-      })(),
+      // 注入真相（B4）：每条为什么进/不进，面板据此分组并给一键动作
+      project,
+      projects: projectRefs(all),
+      injection: {
+        budgetBytes: truth.budgetBytes,
+        header: truth.header,
+        bytes: truth.bytes,
+        textBytes: truth.textBytes,
+        lines: truth.lines,
+        omitted: truth.omitted,
+        pinned: truth.pinnedInjected,
+        project: truth.projectRef,
+        shown: truth.shown,
+        dropped: truth.dropped,
+        counts: truth.counts,
+      },
       cost: summarizeCosts(store),
       degraded: shouldAutoDegrade(store, 7),
       lastSummary: store.getState().lastSummary,
@@ -123,7 +141,14 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     const rawScope = body?.scope;
     const scope: MemoryScope = rawScope === "user" || rawScope === "episode" || rawScope === "project" ? rawScope : current.scope;
     const slot = scope === current.scope ? current.slot : deriveSlot({ kind: current.kind, provenance: current.provenance, scope });
-    await store.updateAtom(id, at => ({ ...at, statement, scope, slot, updatedAt: Date.now() }));
+    // B4：指派/清除项目归属（归属未知的项目记忆永不注入，面板要能一键修好）
+    const rawProject = body?.projectRef;
+    const trimmedProject = rawProject === undefined ? undefined : String(rawProject ?? "").trim().slice(0, 300);
+    const projectRef = scope === "user" ? undefined
+      : rawProject === undefined ? current.projectRef
+      : trimmedProject === "" || trimmedProject === "unknown" ? undefined
+      : trimmedProject;
+    await store.updateAtom(id, at => ({ ...at, statement, scope, slot, projectRef, updatedAt: Date.now() }));
     sendJson(res, 200, { ok: true });
   });
   route("/nexus/api/memory/create", async (req, res) => {

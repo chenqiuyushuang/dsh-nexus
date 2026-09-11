@@ -1,6 +1,8 @@
 /** Nexus 记忆面板：独立 /nexus 页与 DSH 设置面板 iframe 共用的单一实现（React）。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Chip, Tag, Btn, Select } from './components.tsx'
+import { InjectionBar } from './InjectionBar.tsx'
+import type { InjectionTruthView, ProjectRefView } from './InjectionBar.tsx'
 
 interface CostAggregate {
   inputTokens: number
@@ -12,6 +14,10 @@ interface NexusState {
   conflicts: number
   degraded: boolean
   cost: { inject: CostAggregate; extract: CostAggregate }
+  /** B4：默认查看的项目 + 可选项目清单 + 注入真相。 */
+  project?: string
+  projects?: ProjectRefView[]
+  injection?: InjectionTruthView
 }
 interface MemoryItem {
   id: string
@@ -60,13 +66,15 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>
 }
 
-interface LoadParams { q: string; s: string; st: string }
+interface LoadParams { q: string; s: string; st: string; p: string }
 
 /** 面板加载参数，记录为 state 以便事件与查询同步。 */
 export function NexusPanel(): React.ReactNode {
   const [state, setState] = useState<NexusState | null>(null)
   const [items, setItems] = useState<MemoryItem[]>([])
   const [query, setQuery] = useState('')
+  // B4：注入真相要针对某个项目计算（项目记忆按归属隔离）
+  const [project, setProject] = useState('')
   const [scope, setScope] = useState('')
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(true)
@@ -94,18 +102,20 @@ export function NexusPanel(): React.ReactNode {
   const [decisions, setDecisions] = useState<Decisions | null>(null)
   const [showDecisions, setShowDecisions] = useState(false)
 
-  const load = useCallback(async ({ q, s, st: statusFilter }: LoadParams): Promise<void> => {
+  const load = useCallback(async ({ q, s, st: statusFilter, p }: LoadParams): Promise<void> => {
     setLoading(true)
     setError(null)
     try {
       const [stateData, mem, thr, mods, dec] = await Promise.all([
-        j<NexusState>('/nexus/api/state'),
+        j<NexusState>('/nexus/api/state?project=' + encodeURIComponent(p)),
         j<MemoryItem[]>(`/nexus/api/memory?q=${encodeURIComponent(q)}&scope=${encodeURIComponent(s)}&limit=80`),
         j<Thresholds>('/nexus/api/settings'),
         j<ModelRow[]>('/nexus/api/models'),
         j<Decisions>('/nexus/api/decisions'),
       ])
       setState(stateData)
+      // 服务端会给出默认项目；只在本地还没选过时同步一次（避免来回覆盖）
+      if (p === '' && stateData.project !== undefined && stateData.project !== '') setProject(stateData.project)
       setDecisions(dec)
       setItems(statusFilter === '' ? mem : mem.filter((item) => item.status === statusFilter))
       setSettings(thr)
@@ -120,12 +130,12 @@ export function NexusPanel(): React.ReactNode {
     }
   }, [])
 
-  const current: LoadParams = { q: query, s: scope, st: status }
+  const current: LoadParams = { q: query, s: scope, st: status, p: project }
   useEffect(() => {
     const timer = window.setTimeout(() => { void load(current) }, 250)
     return () => { window.clearTimeout(timer) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, scope, status, load])
+  }, [query, scope, status, project, load])
 
   useEffect(() => {
     const timer = window.setInterval(() => { if (!document.hidden) void load(current) }, 15000)
@@ -187,10 +197,20 @@ export function NexusPanel(): React.ReactNode {
     void runAction('/nexus/api/memory/merge', { keep: keepId, drop: dropId }, '合并失败')
   }
   // 置顶：索引块排序第一优先（D3）
-  const togglePin = (item: MemoryItem): void => {
-    const next = item.pinned !== true
-    void runAction('/nexus/api/memory/pin', { id: item.id, pinned: next }, next ? '已置顶' : '已取消置顶',
-      () => { void runAction('/nexus/api/memory/pin', { id: item.id, pinned: !next }, '已撤销') })
+  const pinById = (id: string, next: boolean): void => {
+    void runAction('/nexus/api/memory/pin', { id, pinned: next }, next ? '已置顶（下次注入优先）' : '已取消置顶',
+      () => { void runAction('/nexus/api/memory/pin', { id, pinned: !next }, '已撤销') })
+  }
+  const togglePin = (item: MemoryItem): void => { pinById(item.id, item.pinned !== true) }
+
+  // B4 注入真相条：一键修好「进不去上下文」的原因（复用现有路由，失败有 toast 说明）
+  const injectionActions = {
+    onProject: (ref: string): void => { setProject(ref) },
+    onPin: (id: string, pinned: boolean): void => { pinById(id, pinned) },
+    onAssign: (id: string, ref: string): void => { void runAction('/nexus/api/memory/update', { id, projectRef: ref }, '已指派到 ' + ref) },
+    onScope: (id: string, scope: string): void => { void runAction('/nexus/api/memory/update', { id, scope }, '已改为用户级（所有项目可见）') },
+    onSave: (id: string, statement: string, scope: string): void => { void runAction('/nexus/api/memory/update', { id, statement, scope }, '已更新') },
+    onConfirm: (id: string): void => { confirmOne(id) },
   }
   // 彻底清除（仅回收站/归档行）：真删 + 清边，二次确认
   // 彻底清除：面板内两步确认（替代 window.confirm），文案写明后果
@@ -271,6 +291,15 @@ export function NexusPanel(): React.ReactNode {
         </div>
         <button className="nx-btn" onClick={() => setShowSettings((s) => !s)}>{showSettings ? '收起设置' : '设置'}</button>
       </header>
+
+      {state?.injection !== undefined && (
+        <InjectionBar
+          truth={state.injection}
+          projects={state.projects ?? []}
+          project={state.project ?? project}
+          {...injectionActions}
+        />
+      )}
 
       {state?.degraded === true && (
         <div className="nx-banner">近 7 天未使用记忆注入，已自动降级为「不注入」（节省 token）。继续使用后会逐步恢复。</div>
@@ -447,7 +476,12 @@ export function NexusPanel(): React.ReactNode {
       </div>
 
       <footer className="nx-footer">
-        {state !== null && <div className="nx-footer-meta">注入 {state.cost.inject.inputTokens}/{state.cost.inject.outputTokens} tok · 提炼 {state.cost.extract.inputTokens}/{state.cost.extract.outputTokens} tok</div>}
+        {state !== null && (
+          <div className="nx-footer-meta">
+            本次会话注入累计 {state.cost.inject.inputTokens} tok · 提炼 {state.cost.extract.inputTokens}/{state.cost.extract.outputTokens} tok
+            {state.injection !== undefined ? ' · 单次注入 ' + state.injection.textBytes + ' B' : ''}
+          </div>
+        )}
         <div>记忆保存在本机 <code>~/.dsh/nexus</code>；也可用 <code>/memory list</code>、<code>/memory search</code> 在会话中查看。</div>
       </footer>
     </div>

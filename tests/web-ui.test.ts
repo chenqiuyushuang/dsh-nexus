@@ -196,3 +196,42 @@ describe('合并重复', () => {
     expect(store.getAtom('nex_keep0000000001' as never)?.status).toBe('active')
   })
 })
+describe('B4 注入真相（/state + 指派项目）', () => {
+  const mk = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id, fp: 'fp_' + id, kind: 'fact', slot: 'project', provenance: 'user-declared', scope: 'project',
+    subject: 's', statement: 'st' + id, cues: [], weight: 1, pinned: false, injected: false,
+    status: 'active', confidence: 0.98, sources: [], createdAt: 1, updatedAt: 1, ...overrides,
+  })
+
+  it('已注入只算真正会进上下文的：其他项目 / 归属未知不计入', async () => {
+    const { call, store } = boot()
+    await store.putAtom(mk('nex_user00000000001', { scope: 'user', slot: 'personal', subject: 'u', statement: '用户偏好简洁' }) as never)
+    await store.putAtom(mk('nex_here00000000001', { projectRef: '/proj/a', subject: 'a', statement: '本项目用 pnpm' }) as never)
+    await store.putAtom(mk('nex_other0000000001', { projectRef: '/proj/b', subject: 'b', statement: '别的项目的事' }) as never)
+    await store.putAtom(mk('nex_unkn00000000001', { subject: 'k', statement: '归属未知的项目记忆' }) as never)
+    const res = await call('/nexus/api/state?project=/proj/a', { host: '127.0.0.1:3080' })
+    expect(res.status).toBe(200)
+    const data = JSON.parse(res.body)
+    expect(data.project).toBe('/proj/a')
+    expect(data.injection.lines).toBe(2)
+    expect(data.injection.counts['other-project']).toBe(1)
+    expect(data.injection.counts['unknown-project']).toBe(1)
+    expect(data.injection.dropped).toHaveLength(2)
+    expect(data.injection.shown.map((entry: { subject: string }) => entry.subject).sort()).toEqual(['a', 'u'])
+    expect(data.injection.textBytes).toBeGreaterThan(data.injection.bytes)
+  })
+
+  it('指派项目后归属未知的记忆立刻进入注入（一键修好）', async () => {
+    const { call, store } = boot()
+    await store.putAtom(mk('nex_unkn00000000002', { subject: 'k', statement: '归属未知的项目记忆' }) as never)
+    const before = JSON.parse((await call('/nexus/api/state?project=/proj/a', { host: '127.0.0.1:3080' })).body)
+    expect(before.injection.lines).toBe(0)
+    expect(before.injection.counts['unknown-project']).toBe(1)
+    const updated = await call('/nexus/api/memory/update', LEGIT, { id: 'nex_unkn00000000002', projectRef: '/proj/a' })
+    expect(updated.status).toBe(200)
+    expect(store.getAtom('nex_unkn00000000002' as never)?.projectRef).toBe('/proj/a')
+    const after = JSON.parse((await call('/nexus/api/state?project=/proj/a', { host: '127.0.0.1:3080' })).body)
+    expect(after.injection.lines).toBe(1)
+    expect(after.injection.counts['unknown-project']).toBe(0)
+  })
+})

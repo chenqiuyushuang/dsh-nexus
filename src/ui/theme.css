@@ -300,6 +300,43 @@ html.embedded .nx-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; paddin
 .nx-n-item { padding: 3px 0; color: var(--nx-text); }
 .nx-n-edge { color: var(--nx-text-tertiary); margin-right: 6px; }
 
+/* ---- B4 注入真相条 ---- */
+.nx-inject { margin: 0 0 12px; border: 1px solid var(--nx-border); border-radius: var(--nx-radius);
+  background: var(--nx-bg-card); box-shadow: var(--nx-shadow); overflow: hidden; }
+.nx-inject-bar { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  background: transparent; border: 0; color: var(--nx-text); font: inherit; font-size: 12.5px;
+  cursor: pointer; text-align: left; }
+.nx-inject-bar:hover { background: var(--nx-bg-hover); }
+.nx-inject-meter { flex: none; width: 54px; height: 6px; border-radius: 3px; background: var(--nx-bg-active); overflow: hidden; }
+.nx-inject-meter i { display: block; height: 100%; background: var(--nx-accent); }
+.nx-inject-title { color: var(--nx-text-secondary); }
+.nx-inject-bar b { font-weight: 600; }
+.nx-dim { color: var(--nx-text-muted); }
+.nx-inject-badge { margin-left: auto; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--nx-border);
+  color: var(--nx-text-tertiary); white-space: nowrap; }
+.nx-inject-badge.warn { border-color: var(--nx-warn); color: var(--nx-warn-text); background: var(--nx-warn-soft); }
+.nx-inject-caret { color: var(--nx-accent); white-space: nowrap; }
+.nx-inject-body { border-top: 1px solid var(--nx-border); padding: 10px 12px 14px; }
+.nx-inject-note { color: var(--nx-text-tertiary); font-size: 12px; margin-bottom: 8px; line-height: 1.5; }
+.nx-inject-project { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12.5px; }
+.nx-inject-group { margin-top: 10px; }
+.nx-inject-group-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 12.5px; color: var(--nx-text-secondary); margin-bottom: 6px; }
+.nx-inject-tone-bad { color: var(--nx-error-text); }
+.nx-inject-tone-warn { color: var(--nx-warn-text); }
+.nx-inject-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; padding: 6px 8px;
+  border-radius: var(--nx-radius-sm); }
+.nx-inject-row.in { background: var(--nx-bg-subtle); margin-bottom: 4px; }
+.nx-inject-main { flex: 1 1 260px; min-width: 0; }
+.nx-inject-subject { font-size: 12.5px; font-weight: 600; }
+.nx-inject-statement { font-size: 12px; color: var(--nx-text-secondary); overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.nx-inject-side { display: flex; align-items: center; gap: 6px; flex: none; }
+.nx-inject-bytes { font-size: 11.5px; color: var(--nx-text-muted); font-variant-numeric: tabular-nums; }
+.nx-inject-actions { display: flex; gap: 6px; flex: 1 1 100%; }
+.nx-inject-edit { flex: 1 1 100%; display: flex; flex-direction: column; gap: 6px; }
+.nx-inject-edit-meta { font-size: 11.5px; color: var(--nx-text-tertiary); }
+
 /* ---- 空态 / 页脚 ---- */
 .nx-empty { text-align: center; color: var(--nx-text-secondary); padding: 40px 0 20px; }
 .nx-footer {
