@@ -1,9 +1,9 @@
 /**
- * B3 列表行：折叠态两行截断（≤56px：标签行 + 2 行正文），展开才显示元信息、提示与完整内容；
- * 次要操作收进「⋯」菜单，折叠态只留最高频的「确认 / 展开」。
+ * B3 列表行：折叠态 = 单行（勾选框 + 作用域色条 + 一句正文省略号 + 状态字 + ⋯，约 38px），
+ * 展开后才给标签行、完整正文、冲突/重复提示与元信息；次要操作收进「⋯」菜单。
  *
- * 为什么要拆出来：面板里的行既有 7 个按钮又有元信息，3000 字的记忆直接顶满一屏（实测稚嫩的主因）；
- * 拆成受控 + 本地 UI 状态的纯展示组件后，折叠/展开/菜单/二次确认都能被渲染测试覆盖。
+ * 为什么要拆出来：面板原来的行同时塞 7 个按钮 + 元信息 + 提示，3000 字的记忆直接顶满一屏。
+ * 拆成组件后折叠/展开/菜单/二次确认都能被渲染测试覆盖（见 tests/panel-list.test.ts）。
  */
 import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -36,6 +36,8 @@ const SLOT_NAME: Record<string, string> = {
 const STATUS_NAME: Record<string, string> = {
   pending: '待确认', 'needs-review': '冲突', active: '活跃', archived: '已归档', superseded: '已取代', rejected: '已拒绝',
 }
+const FOLDED_HINT = '点击展开全文'
+const COLLAPSE_HINT = '点击收起'
 
 export interface MemoryRowProps {
   item: MemoryRowItem
@@ -71,6 +73,9 @@ export function MemoryRow({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmPurge, setConfirmPurge] = useState(false)
   const editSeq = useRef(0)
+  // 折叠态不显示标签行（那是展开后的信息）；高频的「确认」留在行内
+  const showTags = expanded || editing
+  const canConfirm = item.status === 'pending' || item.status === 'needs-review'
   const archivable = item.status !== 'archived' && item.status !== 'superseded' && item.status !== 'rejected'
   const inTrash = item.status === 'archived' && item.reviewNote === 'user-deleted'
 
@@ -81,11 +86,14 @@ export function MemoryRow({
     setEditText(item.statement)
     try {
       const full = await onLoadFull(item.id)
-      // 用户可能已经开始改：只有没换行、没重新进入编辑时才覆盖
+      // 用户可能已经开始改：只有没换行、没重新进入编辑时才覆盖预览
       if (editSeq.current === seq) setEditText(full)
-    } catch { /* 失败时保留预览，保存仍走服务端校验 */ }
+    } catch { /* 取全文失败就先用预览，保存仍走服务端 */ }
   }
   const closeMenu = (): void => { setMenuOpen(false); setConfirmArchive(false); setConfirmDelete(false); setConfirmPurge(false) }
+  const onLineKey = (event: { key: string; preventDefault: () => void }, next: boolean): void => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setExpanded(next) }
+  }
 
   return (
     <div className={'nx-row' + (selected ? ' selected' : '') + (expanded ? ' open' : '')}>
@@ -97,15 +105,30 @@ export function MemoryRow({
           aria-label={'选择：' + item.subject}
           onChange={(event) => onSelect(item.id, event.target.checked)}
         />
-        <div className="nx-tags">
-          <Tag text={SCOPE_NAME[item.scope] ?? item.scope} className="scope" />
-          <Tag text={SLOT_NAME[item.slot] ?? item.slot} className={'slot-' + item.slot} />
-          <Tag text={STATUS_NAME[item.status] ?? item.status} className={'status-' + item.status} />
-          {item.pinned === true && <Tag text="置顶" />}
-        </div>
-        {(item.status === 'pending' || item.status === 'needs-review') && (
-          <Btn kind="primary" onClick={() => onConfirm(item.id)}>确认</Btn>
+        {showTags ? (
+          <div className="nx-tags">
+            <Tag text={SCOPE_NAME[item.scope] ?? item.scope} className="scope" />
+            <Tag text={SLOT_NAME[item.slot] ?? item.slot} className={'slot-' + item.slot} />
+            <Tag text={STATUS_NAME[item.status] ?? item.status} className={'status-' + item.status} />
+            {item.pinned === true && <Tag text="置顶" />}
+          </div>
+        ) : (
+          <>
+            <span className={'nx-sbar scope-' + item.scope} aria-hidden="true" />
+            <div
+              className="nx-statement folded"
+              role="button"
+              tabIndex={0}
+              aria-expanded={false}
+              title={FOLDED_HINT}
+              onClick={() => setExpanded(true)}
+              onKeyDown={(event) => onLineKey(event, true)}
+            >{item.statement}</div>
+            <span className="nx-line-status">{STATUS_NAME[item.status] ?? item.status}</span>
+            {item.pinned === true && <span className="nx-line-pin">置顶</span>}
+          </>
         )}
+        {canConfirm && <Btn kind="primary" onClick={() => onConfirm(item.id)}>确认</Btn>}
         <button
           type="button"
           className="nx-more"
@@ -115,7 +138,7 @@ export function MemoryRow({
         >⋯</button>
       </div>
 
-      {editing ? (
+      {editing && (
         <div className="nx-edit-wrap">
           <Select ariaLabel="作用域" value={editScope} onChange={(value) => setEditScope(value)} options={[
             { value: 'project', label: '项目' },
@@ -127,21 +150,20 @@ export function MemoryRow({
             <Btn onClick={() => setEditing(false)}>取消</Btn>
           </div>
         </div>
-      ) : (
-        <div
-          className={'nx-statement' + (expanded ? '' : ' folded')}
-          role="button"
-          tabIndex={0}
-          aria-expanded={expanded}
-          title={expanded ? '点击收起' : '点击展开全文' }
-          onClick={() => setExpanded(!expanded)}
-          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setExpanded(!expanded) } }}
-        >{item.statement}</div>
       )}
 
-      {expanded && (
+      {expanded && !editing && (
         <div className="nx-row-more">
-          {item.truncated === true && !editing && (
+          <div
+            className="nx-statement"
+            role="button"
+            tabIndex={0}
+            aria-expanded={true}
+            title={COLLAPSE_HINT}
+            onClick={() => setExpanded(false)}
+            onKeyDown={(event) => onLineKey(event, false)}
+          >{item.statement}</div>
+          {item.truncated === true && (
             <div className="nx-hint">列表只显示前 400 字（全文 {item.statementLength ?? 0} 字）；点「⋯ → 编辑」载入全文。</div>
           )}
           {item.status === 'needs-review' && item.conflictWith !== undefined && (
@@ -157,6 +179,9 @@ export function MemoryRow({
             <span>ID:{item.id}</span>
             <span>权重:{item.weight} · 置信度:{Math.round((item.confidence ?? 0) * 100)}%</span>
             <span>更新 {new Date(item.updatedAt).toLocaleString()}</span>
+          </div>
+          <div className="nx-actions">
+            <Btn onClick={() => setExpanded(false)}>收起</Btn>
           </div>
         </div>
       )}

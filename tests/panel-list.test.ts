@@ -44,8 +44,11 @@ describe('B3 折叠行', () => {
   it('折叠态只有标签行 + 两行正文：没有元信息、没有次要操作', () => {
     const html = renderRow()
     expect(html).toContain('nx-statement folded')
-    expect(html).toContain('发布流程')
+    expect(html).toContain('nx-sbar scope-project')
     expect(html).toContain('更多操作')
+    // 标签行只在展开后出现（折叠态用色条 + 状态字表达）
+    expect(html).not.toContain('nx-tags')
+    expect(html).toContain('活跃')
     expect(html).not.toContain('ID:')
     expect(html).not.toContain('权重:')
     expect(html).not.toContain('归档')
@@ -56,6 +59,7 @@ describe('B3 折叠行', () => {
     const html = renderRow({ truncated: true, statementLength: 3200 }, { expanded: true })
     expect(html).toContain('ID:nex_row000000000001')
     expect(html).toContain('权重:5')
+    expect(html).toContain('nx-tags')
     expect(html).toContain('列表只显示前 400 字（全文 3200 字）')
   })
 
