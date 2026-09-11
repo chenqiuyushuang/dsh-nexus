@@ -89,12 +89,33 @@ export function renderSummaryLine(
 /** 未知归属的项目记忆标记：永不注入任何项目上下文（宁缺不漏）。 */
 export const UNKNOWN_PROJECT_REF = 'unknown'
 
+/**
+ * 会话的项目归属（P0 回归）：DSH 0.1.5 的 Session 上没有 `meta`，创建元数据在
+ * **`session.header`**（SessionHeader.cwd）。旧实现读 meta.cwd 恒 undefined →
+ * 所有 project 记忆被归一为 unknown → 永不注入（分层承诺在生产形状下失效）。
+ * 兼容读取 meta 是为了兼顾旧宿主形态。
+ */
 export function projectRefOf(session: Session): string | undefined {
   try {
-    const meta = (session as unknown as { meta?: { cwd?: string } }).meta
-    return meta?.cwd
+    const header = (session as unknown as { header?: { cwd?: string } }).header
+    if (typeof header?.cwd === 'string' && header.cwd.length > 0) return header.cwd
+    const legacy = (session as unknown as { meta?: { cwd?: string } }).meta
+    return typeof legacy?.cwd === 'string' && legacy.cwd.length > 0 ? legacy.cwd : undefined
   } catch {
     return undefined
+  }
+}
+
+/**
+ * 子代理/派生会话：其"用户消息"是上级代理的提示词，不是用户本人说的话。
+ * 真实库曾出现 24 条 user 记忆里 17 条是子代理提示词 → 必须门控（否则跨项目污染 + 反复注入）。
+ */
+export function isDelegatedSession(session: Session): boolean {
+  try {
+    const header = (session as unknown as { header?: { origin?: string; delegationDepth?: number } }).header
+    return header?.origin === 'subagent' || (header?.delegationDepth ?? 0) > 0
+  } catch {
+    return false
   }
 }
 
@@ -156,6 +177,8 @@ export function installScheduler(ctx: Context, facility: NexusFacility, config: 
       const type = (event as { type: string }).type
       const data = (event as { data?: unknown }).data
       const mode = modes.get(String(session.id))
+      // 子代理会话：只读不记（提示词不是用户明示内容）
+      if (isDelegatedSession(session)) return
       if (type === 'user/message') {
         const text = textOfUser(data)
         if (text === undefined) return
@@ -321,7 +344,10 @@ export function installScheduler(ctx: Context, facility: NexusFacility, config: 
       const sessionId = String(session.id)
       const captured = buffers.get(sessionId)?.events ?? [];
       const stat = stats(sessionId)
-      if (config.extract !== 'reminder') { await persistSummary(sessionId, stat); buffers.delete(sessionId); return }
+      // 没有注册提取器（未配置 extractorLlm）时不做注定返回空的空跑（红队实测：facility 恒返空）
+      if (config.extract !== 'reminder' || facility.activeExtractor() === undefined) {
+        await persistSummary(sessionId, stat); buffers.delete(sessionId); return
+      }
       const userCount = captured.filter(event => event.role === 'user').length;
       if (userCount < 2) { await persistSummary(sessionId, stat); buffers.delete(sessionId); return }
       const store = await facility.store()

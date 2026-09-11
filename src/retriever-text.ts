@@ -88,18 +88,27 @@ export function createTextRetriever(config: TextRetrieverConfig = DEFAULT_TEXT_R
       const versionedKey = cache.keyOf(query, version)
       const versionedHit = cache.get(versionedKey)
       if (versionedHit !== undefined) {
-        const rankedHit: (RetrievedAtom | undefined)[] = versionedHit.map((id, index) => {
+        // 命中缓存时**重算真实分数**（回归：旧实现返回 (len-index)/len 合成分，
+        // 会把 0.06 抬到 0.33，污染 cost.ts 的"是否被使用"判定 → 延迟自动降级）
+        const rescored: RetrievedAtom[] = []
+        for (const id of versionedHit) {
           const atom = input.store.get(id as MemoryId)
-          return atom === undefined ? undefined : { ...atom, score: (versionedHit.length - index) / versionedHit.length, source: 'text' as const }
-        })
-        return rankedHit.filter((entry): entry is RetrievedAtom => entry !== undefined)
+          if (atom === undefined) continue
+          let entry = prepared.get(atom.id)
+          if (entry === undefined || entry.updatedAt !== atom.updatedAt) {
+            entry = { updatedAt: atom.updatedAt, text: prepareAtomText(atom.subject, atom.statement, atom.cues) }
+            prepared.set(atom.id, entry)
+          }
+          const score = weightedOverlapPrepared(query, entry.text)
+          if (score <= 0.02) continue
+          rescored.push({ ...atom, score, source: 'text' as const })
+        }
+        return rescored.sort((a, b) => b.score - a.score)
       }
       if (prepared.size > atoms.length * 2 + 16) prepared.clear()
       const ranked: { atom: Atom; score: number }[] = []
-      const queryNegated = polarity(query) === -1
       for (const atom of atoms) {
-        // 否定查询（"不要用 X 吗"）不得召回其肯定对应物（相反记忆同时注入的根因之一）
-        if (queryNegated && polarity(atom.subject + ' ' + atom.statement) === 0) continue
+        // 极性只做软惩罚（text.ts ×0.2）：硬过滤会让「不要用 pnpm」这类否定查询空召回（IR 专家实测）
         let entry = prepared.get(atom.id)
         if (entry === undefined || entry.updatedAt !== atom.updatedAt) {
           entry = { updatedAt: atom.updatedAt, text: prepareAtomText(atom.subject, atom.statement, atom.cues) }

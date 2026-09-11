@@ -44,6 +44,7 @@ function boot(options: { allowRemote?: boolean } = {}) {
       return [...ids]
     },
     configureLlmExtractor: (config: { maxInputBytes?: number } | undefined) => { if (config !== undefined) configured.push(config) },
+    touch: async () => {},
   }
   installNexusWeb(ctx as never, facility as never, options)
   const call = async (path: string, headers: Record<string, string>, body?: unknown): Promise<FakeRes> => {

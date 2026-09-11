@@ -70,7 +70,7 @@ describe('writeProjectionAtomic', () => {
     const dir = await tmpDir()
     const target = await writeProjectionAtomic(dir, 'MEMORY.md', 'hello')
     expect(await readFile(target, 'utf8')).toBe('hello')
-    expect((await readdir(dir)).sort()).toEqual(['MEMORY.md'])
+    expect((await readdir(dir)).filter(name => name !== '.gitignore').sort()).toEqual(['MEMORY.md'])
     await rm(dir, { recursive: true, force: true })
   })
 

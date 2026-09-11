@@ -40,11 +40,12 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
   route("/nexus/api/state", async (req, res) => {
     if (!guardRead(req, res)) return;
     const store = await facility.store();
-    const active = [...store.atomEntries()].map(([, a]) => a).filter(a => a.status === "active");
+    const all = [...store.atomEntries()].map(([, a]) => a);
+    const active = all.filter(a => a.status === "active");
     sendJson(res, 200, {
       active: active.length,
-      pending: active.filter(a => a.status === "pending").length,
-      conflicts: [...store.atomEntries()].map(([, a]) => a).filter(a => a.status === "needs-review").length,
+      pending: all.filter(a => a.status === "pending").length,
+      conflicts: all.filter(a => a.status === "needs-review").length,
       byScope: { user: active.filter(a => a.scope === "user").length, project: active.filter(a => a.scope === "project").length, episode: active.filter(a => a.scope === "episode").length },
       cost: summarizeCosts(store),
       degraded: shouldAutoDegrade(store, 7),
@@ -164,13 +165,21 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     const store = await facility.store();
     let purged = 0;
     for (const id of ids) {
-      if (store.getAtom(id) === undefined) continue;
+      const atom = store.getAtom(id);
+      if (atom === undefined) continue;
       await store.deleteAtom(id);
       for (const [edgeId, edge] of [...store.edgeEntries()]) {
         if (edge.from === id || edge.to === id) await store.deleteEdge(edgeId);
       }
+      // 彻底清除要连带删掉 reject 样本（否则原句仍留在磁盘上）
+      const sample = atom.statement.slice(0, 500);
+      for (const [rejectId, record] of [...store.rejectEntries()]) {
+        if (record.sample === sample) await store.deleteReject(rejectId);
+      }
       purged += 1;
     }
+    // 同步投影，避免已删内容仍写在 MEMORY.md/USER.md 里
+    await facility.touch();
     sendJson(res, 200, { purged });
   });
   route("/nexus/api/memory/delete", async (req, res) => {

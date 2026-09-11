@@ -129,12 +129,22 @@ export class MemoryStore {
 
   // ---- recalls ----
   async putRecall(record: RecallRecord): Promise<void> { await this.tables.recalls.put(record.id, record) }
+  /** recall 账本滚动（架构师实测：此前无任何裁剪路径，长期无界增长）。 */
+  async pruneRecalls(keep: number): Promise<number> {
+    const all = [...this.recallEntries()].sort((a, b) => b[1].at - a[1].at)
+    const excess = Math.max(0, all.length - keep)
+    for (let index = 0; index < excess; index += 1) await this.tables.recalls.delete(all[index][0])
+    return excess
+  }
+  get recallCount(): number { return this.tables.recalls.size }
   recallEntries(): IterableIterator<[RecallId, RecallRecord]> { return this.tables.recalls.entries() }
 
   // ---- reject log ----
   async putReject(record: RejectRecord): Promise<void> { await this.tables.rejects.put(record.id, record) }
   rejectEntries(): IterableIterator<[RejectId, RejectRecord]> { return this.tables.rejects.entries() }
   get rejectCount(): number { return this.tables.rejects.size }
+  /** 彻底清除时连带删除对应的拒绝样本（隐私：不留原文残留）。 */
+  async deleteReject(id: RejectId): Promise<boolean> { return await this.tables.rejects.delete(id) }
   /**
    * Keep the newest `limit` logs; returns how many were pruned.
    * 回归修复（P0）：并发下键可能已被另一路删除，delete 返回 false 时游标必须
@@ -156,7 +166,9 @@ export class MemoryStore {
 
   /** 成本滚动：只保留最新的 `keep` 条（默认 365 天语义由调用方换算为条数）。同上：删除结果不影响游标。 */
   async pruneCosts(keep: number): Promise<number> {
-    const all = [...this.costEntries()].sort((a, b) => b[1].at - a[1].at)
+    // 升序后从头部删 = 保留最新 keep 条（P0 回归：旧实现降序删头，删掉的是最新记录，
+    // 导致账本冻结在最旧数据上、每日预算闸门读不到今日用量而静默失效）
+    const all = [...this.costEntries()].sort((a, b) => a[1].at - b[1].at)
     const excess = Math.max(0, all.length - keep)
     for (let index = 0; index < excess; index += 1) {
       await this.deleteCost(all[index][0])

@@ -59,6 +59,9 @@ export class NexusFacility {
   /** Register a post-write hook (projection sync). Awaited inside saveAtom. */
   addOnWrite(hook: () => Promise<void>): void { this.onWriteHook = hook }
 
+  /** 主动触发一次写路径副作用（投影同步等）——删除/合并/批量归档后调用。 */
+  async touch(): Promise<void> { await this.onWriteHook?.() }
+
   private extractor?: ExtractorProcessor
   private retriever?: RetrieverProcessor
   private forgetter?: ForgetterProcessor
@@ -256,6 +259,9 @@ export class NexusFacility {
   }
 
   /** Record one recall (session-start index or an explicit search). */
+  /** recall 账本上限（防止无界增长；daily/降级判定都只需近期窗口）。 */
+  static readonly RECALL_LOG_MAX = 2000
+
   async recordRecall(input: {
     sessionId: string
     turn: number
@@ -276,6 +282,7 @@ export class NexusFacility {
       injectedBytes: input.injectedBytes,
     }
     await store.putRecall(record)
+    if (store.recallCount > NexusFacility.RECALL_LOG_MAX * 2) await store.pruneRecalls(NexusFacility.RECALL_LOG_MAX)
     await store.putCost({ id: costId(), at: record.at, sessionId: record.sessionId, kind: 'inject', inputTokens: 0, outputTokens: 0, bytes: record.injectedBytes })
     await store.pruneCosts(365 * 8)
     this.ctx.emit('nexus/memory/recalled', record)

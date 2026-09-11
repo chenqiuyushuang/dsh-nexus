@@ -163,9 +163,18 @@ export function deriveSlot(input: { readonly kind: MemoryKind; readonly provenan
   return 'reference'
 }
 
-/** 注入行内的文本扁平化：换行/制表/连续空白折叠为空格，防止伪造块结构（数据非指令）。 */
+/**
+ * 注入行内的文本扁平化：换行/制表/Unicode 行段分隔符/零宽与双向控制符全部折叠，
+ * 防止伪造「## 记忆」段头或指令行（安全专家实测 U+2028/U+2029 曾可逃逸）。
+ */
 export function flattenIndexText(text: string): string {
-  return text.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
+  return text
+    .normalize('NFKC')
+    .replace(/[\u2028\u2029\u0085\u200B-\u200F\u2060\uFEFF]/g, ' ')
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
 }
 
 /** One index line (the frozen ## 记忆 block); pinned memories get a star. */

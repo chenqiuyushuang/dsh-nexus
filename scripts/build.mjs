@@ -47,7 +47,7 @@ await build({
   outfile: 'lib/nexus-ui.js',
   external: ['node:*', 'zod', 'schemastery', '@deepseek-ai/*'],
   minify: true,
-  sourcemap: 'inline',
+  sourcemap: false,   // 曾内联 sourcemap：面板 HTML 里带着全部源码（隐私 + 体积）
 })
 
 // 组装单文件 HTML：token CSS + React bundle 全内联，renderShell 直接返回。

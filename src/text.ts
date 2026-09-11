@@ -5,10 +5,24 @@
  * @module @chenqiuyushuang/dsh-nexus/text
  */
 
+/**
+ * 归一化（安全 + 语言学共用，确定性零 token）：
+ * 1. NFKC 折叠全角/兼容字符（全角冒号「：」→「:」等）；
+ * 2. 去掉零宽与双向控制符（U+200B-200F/2060/FEFF，防拆词绕过扫描）；
+ * 3. 折叠 Unicode 行/段分隔符（U+2028/2029/0085）为空格（防伪造注入块结构）。
+ */
+export function normalizeText(text: string): string {
+  return text
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200F\u2060\uFEFF]/g, '')
+    .replace(/[\u2028\u2029\u0085]/g, ' ')
+}
+
 /** Tokenize: ASCII words + CJK segments and their sliding 2-grams. */
 export function tokenize(text: string): string[] {
-  const ascii = text.toLowerCase().match(/[a-z0-9_][a-z0-9_\-]*/g) ?? []
-  const cjk = text.match(/[\u4e00-\u9fff]{2,}/g) ?? []
+  const normalized = normalizeText(text)
+  const ascii = normalized.toLowerCase().match(/[a-z0-9_][a-z0-9_\-]*/g) ?? []
+  const cjk = normalized.match(/[\u4e00-\u9fff]{2,}/g) ?? []
   const bigrams: string[] = []
   for (const chunk of cjk) {
     for (let i = 0; i + 2 <= chunk.length; i += 1) bigrams.push(chunk.slice(i, i + 2))
@@ -23,8 +37,9 @@ export function tokenize(text: string): string[] {
  * character without exact-phrase containment.
  */
 export function tokenizeRetrieval(text: string): string[] {
-  const ascii = text.toLowerCase().match(/[a-z0-9_][a-z0-9_\-]*/g) ?? []
-  const cjk = text.match(/[\u4e00-\u9fff]{2,}/g) ?? []
+  const normalized = normalizeText(text)
+  const ascii = normalized.toLowerCase().match(/[a-z0-9_][a-z0-9_\-]*/g) ?? []
+  const cjk = normalized.match(/[\u4e00-\u9fff]{2,}/g) ?? []
   const chars: string[] = []
   const bigrams: string[] = []
   for (const chunk of cjk) {
@@ -40,13 +55,17 @@ export function tokenizeRetrieval(text: string): string[] {
  */
 const NEGATION_RE = /(?:别|勿|禁止|避免|不要|不用|不能|不可|不应|不该|不再|never|don'?t|do not|avoid|no longer)/
 /** 含"不"但不是否定的常见词（不错/不仅/不同…）。 */
-const NOT_NEGATION_RE = /不(?:错|少|同|仅|但|过|断|如|光|只|久|锈钢)/g
+// 「不」开头但并非否定的常见词 + A-not-A 疑问形式（是不是/能不能/会不会/行不行…）
+const NOT_NEGATION_RE = /不(?:错|少|同|仅|但|过|断|如|光|只|久|锈钢|如说)/g
+const A_NOT_A_RE = /(?:是|能|会|行|要|对|可|好|该|愿|敢)不(?:是|能|会|行|要|对|可|好|该|愿|敢)/g
 
 /** 文本极性：-1 = 否定句；0 = 无否定标记。 */
 export function polarity(text: string): -1 | 0 {
-  const normalized = text.toLowerCase()
+  const normalized = normalizeText(text).toLowerCase()
   if (NEGATION_RE.test(normalized)) return -1
-  return normalized.replace(NOT_NEGATION_RE, '').includes('不') ? -1 : 0
+  // 先剔除 A-not-A 疑问（"能不能用 pnpm" 是在问，不是在否定），再剔除假否定词
+  const stripped = normalized.replace(A_NOT_A_RE, '').replace(NOT_NEGATION_RE, '')
+  return stripped.includes('不') ? -1 : 0
 }
 
 /** Overlap ratio between two texts (jaccard on tokens). */

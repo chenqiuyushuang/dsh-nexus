@@ -1,6 +1,6 @@
 /** Scheduler pure helpers: injection text, modes, projectRef degrade. */
 import { describe, expect, it } from 'vitest'
-import { buildInjectionText, renderSummaryLine, SessionModeControl } from '../src/scheduler.ts'
+import { buildInjectionText, isDelegatedSession, projectRefOf, renderSummaryLine, SessionModeControl } from '../src/scheduler.ts'
 import { mkAtom } from './atom.test.ts'
 
 describe('buildInjectionText', () => {
@@ -53,5 +53,20 @@ describe('会话小结行（可见性）', () => {
     expect(renderSummaryLine({ at: now, saved: 0, pending: 0, skippedWindows: 0 }, now)).toBeUndefined()
     expect(renderSummaryLine({ at: now - 8 * 86_400_000, saved: 5, pending: 0, skippedWindows: 0 }, now)).toBeUndefined()
     expect(renderSummaryLine(undefined, now)).toBeUndefined()
+  })
+})
+describe('会话归属与子代理门控（P0/P1 回归）', () => {
+  it('从 session.header.cwd 读项目归属（旧实现读不存在的 meta → 永远 undefined）', () => {
+    expect(projectRefOf({ header: { cwd: '/Users/x/proj' } } as never)).toBe('/Users/x/proj')
+    expect(projectRefOf({ meta: { cwd: '/legacy' } } as never)).toBe('/legacy')
+    expect(projectRefOf({} as never)).toBeUndefined()
+    expect(projectRefOf({ header: { cwd: '' } } as never)).toBeUndefined()
+  })
+
+  it('子代理/派生会话被识别（提示词不入库）', () => {
+    expect(isDelegatedSession({ header: { origin: 'subagent' } } as never)).toBe(true)
+    expect(isDelegatedSession({ header: { delegationDepth: 2 } } as never)).toBe(true)
+    expect(isDelegatedSession({ header: { cwd: '/p' } } as never)).toBe(false)
+    expect(isDelegatedSession({} as never)).toBe(false)
   })
 })

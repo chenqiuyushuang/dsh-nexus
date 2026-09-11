@@ -12,6 +12,7 @@
  */
 import { mkdir, rename, writeFile, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { chmod, mkdir as mkdirP, writeFile as writeFileP } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import type { Atom, MemorySlot } from './atom.ts'
 import { renderIndexLine } from './atom.ts'
@@ -94,13 +95,32 @@ export function buildProjectionTexts(atoms: readonly Atom[], budgetBytes: number
  * never leaves a truncated projection. Creates parent directories.
  */
 export async function writeProjectionAtomic(dir: string, file: string, text: string): Promise<string> {
-  await mkdir(dir, { recursive: true })
+  await ensureProjectionDirPrivate(dir)
   const target = join(dir, file)
   // 唯一 tmp 名：并发写（如 boot 同步与写路径同步并行）不会互相 rename 对方的工作文件
   const tmp = target + '.' + randomUUID() + '.tmp'
-  await writeFile(tmp, text, 'utf8')
+  await writeFile(tmp, text, { encoding: 'utf8', mode: 0o600 })
   await rename(tmp, target)
+  // 已存在文件 rewrite 不继承 mode，显式收紧（隐私专家实测此前 0644/0755）
+  await chmod(target, 0o600).catch(() => {})
   return target
+}
+
+let projectionDirSecured = ''
+/**
+ * 投影目录私有化：目录 0700、文件 0600，并在目录内放 .gitignore(*)，
+ * 避免用户误把含真实记忆的 MEMORY.md/USER.md 提交进仓库（提交后不可撤回）。
+ */
+export async function ensureProjectionDirPrivate(dir: string): Promise<void> {
+  await mkdirP(dir, { recursive: true, mode: 0o700 }).catch(() => {})
+  await chmod(dir, 0o700).catch(() => {})
+  if (projectionDirSecured === dir) return
+  try {
+    await writeFileP(join(dir, '.gitignore'), '*\n', { encoding: 'utf8', mode: 0o600 })
+    projectionDirSecured = dir
+  } catch {
+    /* 只读盘等场景：失败不影响记忆功能 */
+  }
 }
 
 /** Read a projection file (undefined when absent or unreadable). */

@@ -78,13 +78,26 @@ export function installTools(ctx: Context, facility: NexusFacility, resolved: Re
         turn: 0, step: 0,
         store: store.snapshot(),
       }, AbortSignal.timeout(10_000));
+      const recallHits = hits.map(atom => ({ atomId: atom.id, score: atom.score, source: 'text' as const }));
+      if (hits.length === 0) return '无结果'
+      // 设计 D3 承诺：按需检索单次 ≤1.5KB（逐条截断 statement + 总量封顶），避免一次搜索灌满上下文
+      const budget = 1536
+      const lines: string[] = []
+      let used = 0
+      for (const [index, atom] of hits.entries()) {
+        const statement = atom.statement.length > 200 ? atom.statement.slice(0, 200) + '…' : atom.statement
+        const line = (index + 1) + '. [' + atom.slot + '·' + atom.kind + '] ' + atom.subject + '：' + statement + ' (' + (atom.confidence * 100).toFixed(0) + '% conf, ' + atom.id + ')'
+        const bytes = Buffer.byteLength(line, 'utf8')
+        if (used + bytes > budget) break
+        lines.push(line)
+        used += bytes
+      }
       await facility.recordRecall({
         sessionId: 'tool-search', turn: 0, step: 0, queryPreview: args.query,
-        hits: hits.map(atom => ({ atomId: atom.id, score: atom.score, source: 'text' })),
-        injectedBytes: 0,
+        hits: recallHits, injectedBytes: used,
       });
-      return hits.length === 0 ? '无结果' : hits.map((atom, index) =>
-        (index + 1) + '. [' + atom.slot + '·' + atom.kind + '] ' + atom.subject + '：' + atom.statement + ' (' + (atom.confidence * 100).toFixed(0) + '% conf, ' + atom.id + ')').join('\n');
+      if (lines.length === 0) return '无结果（命中内容超出单次检索上限）'
+      return lines.join('\n') + (lines.length < hits.length ? '\n（其余 ' + (hits.length - lines.length) + ' 条因 1.5KB 上限省略）' : '')
     },
   }));
 
