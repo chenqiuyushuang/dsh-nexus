@@ -77,15 +77,37 @@ export interface DeterministicExtractResult {
 const TRIGGER_SCAFFOLD_RE = new RegExp('^(?:请|帮我|麻烦|以后|今后|一定要|务必|记得)?\\s*[，,：:]?\\s*(?=' + USER_TRIGGER_RE.source + ')', 'i')
 
 /**
+ * 只去句首的那一个触发词。曾经的实现是全局 replace：句中出现「记住/别忘/我一直用」
+ * 也会被删掉，于是「记住：发布前必须记住检查灰度」被存成「发布前必须检查灰度」——
+ * 存进库的话和用户说的不一样（比疑问句误记更隐蔽的正确性问题）。
+ */
+const LEADING_TRIGGER_RE = new RegExp('^(?:' + USER_TRIGGER_RE.source + ')[\\s:：,，。]*', 'i')
+
+/**
  * Strip a trigger phrase from the raw user text, keep the durable claim.
  * Scaffolding is removed only when it PRECEDES the trigger, so content that
  * merely starts with 请/帮我 («记住，请用中文回复») survives untouched.
  */
+/** 剥一次句首触发词；剥完只剩裸词（无中文且 <3 个词）就不剥，避免「我一直用 pnpm」变成「pnpm」。 */
+function stripLeadingOnce(text: string): string {
+  const stripped = text.replace(TRIGGER_SCAFFOLD_RE, '').replace(LEADING_TRIGGER_RE, '')
+  if (stripped === text) return text
+  const hasCjk = /[\u4e00-\u9fff]/.test(stripped)
+  const words = stripped.split(/\s+/).filter((part) => part !== '').length
+  if (!hasCjk && words < 3) return text
+  return stripped
+}
+
 export function stripTrigger(raw: string): string {
-  const global = new RegExp(USER_TRIGGER_RE.source, 'gi')
-  return raw
-    .replace(TRIGGER_SCAFFOLD_RE, '')
-    .replace(global, '')
+  // 循环剥离「句首」的脚手架 + 触发词链（「记住，我们约定如下：X」→ X），
+  // 但绝不碰句子中间的触发词（那是内容）。
+  let out = raw
+  for (let round = 0; round < 4; round += 1) {
+    const next = stripLeadingOnce(out)
+    if (next === out) break
+    out = next
+  }
+  return out
     .replace(/^[\s:：,，。]+/, '')
     .replace(/^如下[\s:：,，。]*/, '')
     .trim()

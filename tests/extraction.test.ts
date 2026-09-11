@@ -194,3 +194,17 @@ describe('同族残留回归（专家团第二轮实测）', () => {
     expect(extractFromTrigger('记住，你答应过我用 pnpm')).toBeDefined()
   });
 });
+describe('触发词剥离（P0 正确性：存进库的话必须和用户说的一致）', () => {
+  it('只去掉句首那一个触发词', () => {
+    expect(stripTrigger('记住：项目用 pnpm 管理依赖')).toBe('项目用 pnpm 管理依赖')
+    expect(stripTrigger('请记住，发布从 staging 分支进行')).toBe('发布从 staging 分支进行')
+    expect(stripTrigger('以后一直用 pnpm')).toBe('用 pnpm')
+    expect(stripTrigger('我的习惯是早上写代码')).toBe('早上写代码')
+  })
+
+  it('句子中间出现的触发词是内容，不能被删（旧实现会全局删掉）', () => {
+    expect(stripTrigger('记住：发布前必须记住检查灰度指标')).toBe('发布前必须记住检查灰度指标')
+    expect(stripTrigger('记住：提交前别忘记跑测试')).toBe('提交前别忘记跑测试')
+    expect(stripTrigger('记住：我一直用 pnpm')).toBe('我一直用 pnpm')
+  })
+})
