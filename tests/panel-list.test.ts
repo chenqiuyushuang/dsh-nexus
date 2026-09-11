@@ -64,7 +64,7 @@ describe('B3 折叠行', () => {
     expect(html).toContain('nx-sbar scope-project')
     expect(html).toContain('权重:5')
     expect(html).toContain('nx-tags')
-    expect(html).toContain('列表只显示前 400 字（全文 3200 字）')
+    expect(html).toContain('仅显示前 400 字（全文 3200 字）')
   })
 
   it('待确认行给「确认」主操作，选中态勾选框为选中', () => {

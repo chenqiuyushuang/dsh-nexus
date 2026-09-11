@@ -111,6 +111,8 @@ export function NexusPanel(): React.ReactNode {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchConfirm, setBatchConfirm] = useState<'archive' | 'trash' | null>(null)
   const [noiseConfirm, setNoiseConfirm] = useState(false)
+  // 手风琴：同时只展开一条（长记忆展开会吃掉整个列表视口）
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const [showHint, setShowHint] = useState(false)
   // B5 反馈层：底部 toast（成功带 5 秒撤销；失败带原因），取代 window.alert/confirm
   const [toast, setToast] = useState<{ text: string; error?: boolean; undo?: () => void } | null>(null)
@@ -534,6 +536,8 @@ export function NexusPanel(): React.ReactNode {
               {...(neighbors[item.id] !== undefined ? { neighbors: neighbors[item.id] } : {})}
               neighborsOpen={openIds.has(item.id)}
               onToggleNeighbors={toggleNeighbors}
+              expandedId={expandedId}
+              onToggleExpand={setExpandedId}
               {...(state?.injection !== undefined ? { budgetBytes: state.injection.budgetBytes } : {})}
               onLoadFull={loadFull}
               onSave={saveEdit}

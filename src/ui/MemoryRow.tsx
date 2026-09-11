@@ -48,6 +48,9 @@ export interface MemoryRowProps {
   onSelect: (id: string, next: boolean) => void
   /** 初始展开（测试/深链用）。 */
   defaultExpanded?: boolean
+  /** 受控展开：面板用它实现「同时只展开一条」（手风琴），避免长记忆把列表视口吃光。 */
+  expandedId?: string | null
+  onToggleExpand?: (id: string | null) => void
   neighbors?: NeighborState
   neighborsOpen: boolean
   onToggleNeighbors: (id: string) => void
@@ -66,10 +69,16 @@ export interface MemoryRowProps {
 }
 
 export function MemoryRow({
-  item, selected, onSelect, defaultExpanded, neighbors, neighborsOpen, onToggleNeighbors, budgetBytes = Number.NaN,
+  item, selected, onSelect, defaultExpanded, expandedId, onToggleExpand, neighbors, neighborsOpen, onToggleNeighbors, budgetBytes = Number.NaN,
   onLoadFull, onSave, onConfirm, onTogglePin, onArchive, onRestore, onDelete, onPurge, onMerge,
 }: MemoryRowProps): ReactNode {
-  const [expanded, setExpanded] = useState(defaultExpanded === true)
+  const [expandedLocal, setExpandedLocal] = useState(defaultExpanded === true)
+  // 受控优先（面板传 expandedId）；未受控时用本地状态（组件单测与独立使用）
+  const expanded = expandedId !== undefined ? expandedId === item.id : expandedLocal
+  const setExpanded = (next: boolean): void => {
+    if (onToggleExpand !== undefined) onToggleExpand(next ? item.id : null)
+    else setExpandedLocal(next)
+  }
   const [menuOpen, setMenuOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState('')
@@ -136,6 +145,7 @@ export function MemoryRow({
           </div>
         ) : (
           <>
+            <span className="nx-chevron" aria-hidden="true">▸</span>
             <div
               className="nx-statement folded"
               role="button"
@@ -176,17 +186,24 @@ export function MemoryRow({
 
       {expanded && !editing && (
         <div className="nx-row-more">
-          <div
-            className="nx-statement"
-            role="button"
-            tabIndex={0}
-            aria-expanded={true}
-            title={COLLAPSE_HINT}
-            onClick={() => setExpanded(false)}
-            onKeyDown={(event) => onLineKey(event, false)}
-          >{item.statement}</div>
+          {/* 展开内容限高 + 内部滚动（并给键盘焦点，WCAG 2.1.1）：
+              不限高的话，一条 400 字的记忆在窄栏里就是 10 行文字墙，把整屏推走 */}
+          <div className="nx-statement-open" tabIndex={0} aria-label="记忆全文（可滚动）">
+            <div
+              className="nx-statement"
+              role="button"
+              tabIndex={0}
+              aria-expanded={true}
+              title={COLLAPSE_HINT}
+              onClick={() => setExpanded(false)}
+              onKeyDown={(event) => onLineKey(event, false)}
+            >{item.statement}</div>
+          </div>
+          <div className="nx-actions">
+            <Btn onClick={() => setExpanded(false)}>收起 ▴</Btn>
+          </div>
           {item.truncated === true && (
-            <div className="nx-hint">列表只显示前 400 字（全文 {item.statementLength ?? 0} 字）；点「⋯ → 编辑」载入全文。</div>
+            <div className="nx-hint">仅显示前 400 字（全文 {item.statementLength ?? 0} 字）· 「⋯ → 编辑」看全文</div>
           )}
           {item.status === 'needs-review' && item.conflictWith !== undefined && (
             <div className="nx-hint">与记忆 {item.conflictWith} 冲突</div>
@@ -206,9 +223,6 @@ export function MemoryRow({
               </span>
             )}
             <span>更新 {new Date(item.updatedAt).toLocaleString()}</span>
-          </div>
-          <div className="nx-actions">
-            <Btn onClick={() => setExpanded(false)}>收起</Btn>
           </div>
         </div>
       )}

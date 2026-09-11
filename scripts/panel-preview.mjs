@@ -88,6 +88,11 @@ try {
   await new Promise((r) => setTimeout(r, 5000))
   if (process.argv.includes('--expand-inject')) { await clickInFrame('.nx-inject-bar'); await new Promise((r) => setTimeout(r, 600)) }
   if (process.argv.includes('--open-settings')) { await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const btn = [...doc.querySelectorAll("button")].find((b) => (b.textContent || "").trim() === "设置"); if (btn) btn.click(); return !!btn })()' }); await new Promise((r) => setTimeout(r, 800)) }
+  // 场景：展开第一行（长记忆展开后的真实样子 —— 这正是我此前没看过的组合）
+  if (process.argv.includes('--expand-row')) {
+    await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const line = doc.querySelector(".nx-statement.folded"); if (line) line.click(); return !!line })()' })
+    await new Promise((r) => setTimeout(r, 600))
+  }
   if (process.argv.includes('--select-first')) {
     await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const row = doc.querySelector(".nx-row"); const cb = doc.querySelector(".nx-check"); window.__beforeTop = row ? Math.round(row.getBoundingClientRect().top) : null; if (cb) cb.click(); return window.__beforeTop })()' })
     await new Promise((r) => setTimeout(r, 700))

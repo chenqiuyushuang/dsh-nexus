@@ -371,6 +371,15 @@ html.embedded .nx-sub { display: none; }
 
 /* ---- B3 列表密度 ---- */
 /* 折叠态：标签行 + 两行正文（≤56px）；展开才显示元信息与提示 */
+/* 展开指示：折叠行左侧的 ▸（可见的可展开暗示，用户不该靠猜） */
+.nx-chevron { flex: none; color: var(--nx-text-tertiary); font-size: 11px; }
+
+/* 展开内容限高 + 内部滚动：一条 400 字记忆在窄栏里是 10 行文字墙，不限高会把整屏推走。
+   tabIndex 在组件上（键盘可滚动，WCAG 2.1.1）。 */
+/* 96px ≈ 5 行：展开后列表里至少还能看见下一条（120px 时正好占满视口） */
+.nx-statement-open { max-height: 96px; overflow-y: auto; overscroll-behavior: contain; }
+.nx-statement-open:focus-visible { outline: 2px solid var(--nx-accent); outline-offset: 2px; border-radius: var(--nx-radius-sm); }
+
 /* 单行省略（比多行 clamp 更省高度，滚动扫描更像收件箱） */
 .nx-statement.folded {
   flex: 1 1 auto; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden;
