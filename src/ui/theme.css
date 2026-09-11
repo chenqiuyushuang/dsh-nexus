@@ -161,7 +161,35 @@ body {
 html.embedded, html.embedded body, html.embedded #root { height: 100%; margin: 0; }
 /* 嵌入态：面板固定高，只有列表滚动 —— 头部/统计/工具条永远可见（UI 专家共识） */
 html.embedded .nx-app { height: 100%; display: flex; flex-direction: column; padding-bottom: 0; }
-html.embedded .nx-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 12px; }
+/* 关键：flex 列里的其它子项必须 flex: none，否则会被压缩。
+   实测（设置弹窗窄栏 372x460）：注入条有 overflow:hidden → 自动最小高度为 0
+   → 被压成 6px 整条消失，工具栏被压、列表只剩 1 行。 */
+html.embedded .nx-app > * { flex: none; }
+html.embedded .nx-list { flex: 1 1 auto; min-height: 160px; overflow-y: auto; padding-bottom: 12px; }
+/* 窄栏：页脚信息价值低却占 63px（比列表还高），让位给列表 */
+html.embedded .nx-footer { display: none; }
+/* 窄栏：统计与工具栏收紧，计数不再独占一行 */
+html.embedded .nx-stats { gap: 6px; margin-bottom: 8px; }
+html.embedded .nx-toolbar { gap: 6px; margin-bottom: 8px; }
+html.embedded .nx-search { min-width: 132px; }
+html.embedded .nx-count { margin-left: 0; }
+/* 窄栏：注入条允许换行，别把「未进入 N」挤出可视区 */
+html.embedded .nx-inject-bar { flex-wrap: wrap; row-gap: 4px; }
+/* 窄栏：控件整体收紧一档（搜索框 + 2 个下拉 + 3 个按钮 + 计数 = 2 行） */
+html.embedded .nx-select-trigger { padding: 5px 8px; font-size: 12px; }
+html.embedded .nx-btn { padding: 5px 9px; font-size: 12px; }
+html.embedded .nx-tool-more { display: none; }
+/* 窄栏：注入条只留数字（进度条与「进入上下文」标签可省，数字自明）→ 单行 40px 而不是两行 67px */
+html.embedded .nx-inject-meter { display: none; }
+html.embedded .nx-inject-title { display: none; }
+html.embedded .nx-inject-note { display: none; }
+/* 窄栏：搜索框独占一行，其余控件才能并排成 2 行 */
+/* 窄栏：搜索与作用域同排（搜索不再独占整行），并把统计/占比条压矮一档 */
+html.embedded .nx-search { flex: 1 1 120px; min-width: 110px; }
+html.embedded .nx-chip { padding: 3px 8px; font-size: 11.5px; }
+html.embedded .nx-scopebar-track { height: 4px; }
+html.embedded .nx-scopebar-legend { margin-top: 4px; font-size: 11px; gap: 8px; }
+/* 窄栏：刷新与全选本页收进「更多」占位（列表每 15s 自动刷新，全选仍可点勾选框） */
 /* 嵌入态空间紧张：副标题让位给列表 */
 html.embedded .nx-sub { display: none; }
 

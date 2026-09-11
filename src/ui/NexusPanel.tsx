@@ -432,11 +432,11 @@ export function NexusPanel(): React.ReactNode {
           { value: 'archived', label: '已归档' },
           { value: 'superseded', label: '已取代' },
         ]} />
-        <Btn onClick={reload}>刷新</Btn>
+        <span className="nx-tool-more"><Btn onClick={reload}>刷新</Btn></span>
         <Btn kind="primary" onClick={startAdd}>新增</Btn>
         <Btn onClick={() => setShowDecisions(!showDecisions)}>{showDecisions ? '收起决策日志' : '决策日志'}</Btn>
         <span className="nx-count" role="status" aria-live="polite">显示 {items.length} / 共 {total} 条</span>
-        {items.length > 0 && <Btn onClick={selectPage}>全选本页</Btn>}
+        {items.length > 0 && <span className="nx-tool-more"><Btn onClick={selectPage}>全选本页</Btn></span>}
       </div>
       <div className="nx-decisions">
         {showDecisions && (
