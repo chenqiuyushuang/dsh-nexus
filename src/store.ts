@@ -25,6 +25,8 @@ export const nexusStateSchema = zod.object({
   junkRulesVersion: zod.number().int().nonnegative().optional(),
   /** Identity re-scope generation already applied. */
   identityRescopeVersion: zod.number().int().nonnegative().optional(),
+  /** 生命周期 tick 上次运行时间（6 小时节流）。 */
+  lastLifecycleAt: zod.number().int().nonnegative().optional(),
   /** 上一次会话的记忆小结（下次会话注入块里显示一行，让用户看得见）。 */
   lastSummary: zod.object({
     at: zod.number().int().nonnegative(),
@@ -131,7 +133,8 @@ export class MemoryStore {
   async putRecall(record: RecallRecord): Promise<void> { await this.tables.recalls.put(record.id, record) }
   /** recall 账本滚动（架构师实测：此前无任何裁剪路径，长期无界增长）。 */
   async pruneRecalls(keep: number): Promise<number> {
-    const all = [...this.recallEntries()].sort((a, b) => b[1].at - a[1].at)
+    // 升序后删头部 = 保留最新 keep 条（与 pruneCosts 同族的"方向"回归：降序删头会删掉最新记录）
+    const all = [...this.recallEntries()].sort((a, b) => a[1].at - b[1].at)
     const excess = Math.max(0, all.length - keep)
     for (let index = 0; index < excess; index += 1) await this.tables.recalls.delete(all[index][0])
     return excess

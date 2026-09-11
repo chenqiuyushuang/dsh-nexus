@@ -95,6 +95,30 @@ export function extractTokensUsedToday(
   return used
 }
 
+/**
+ * 在途预留：并发会话各自读到同一 remaining 会超支（成本专家实测），
+ * 这里用进程内在途计数把"已被预留但尚未记账"的额度扣掉。
+ */
+let inFlightTokens = 0
+
+/** 预留提炼额度，返回实际批准量（并发安全，先到先得）。 */
+export function reserveExtractionBudget(requested: number, remaining: number): number {
+  const available = Math.max(0, remaining - inFlightTokens)
+  const granted = Math.min(Math.max(0, requested), available)
+  inFlightTokens += granted
+  return granted
+}
+
+/** 释放未用完的预留（调用方在循环结束后归还剩余）。 */
+export function releaseExtractionBudget(unused: number): void {
+  inFlightTokens = Math.max(0, inFlightTokens - Math.max(0, unused))
+}
+
+/** 测试用：清零在途预留。 */
+export function resetExtractionBudgetForTests(): void {
+  inFlightTokens = 0
+}
+
 /** 每日剩余可用输入 token（0 表示今天不再提炼）。 */
 export function dailyBudgetRemaining(usedToday: number, budget: ExtractBudget): number {
   return Math.max(0, budget.maxTokensPerDay - usedToday)

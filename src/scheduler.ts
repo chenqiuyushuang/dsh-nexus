@@ -18,7 +18,7 @@ import { z as zod } from 'zod'
 import type { NexusFacility } from './facility.ts'
 import type { ResolvedConfig } from './config.ts'
 import { shouldAutoDegrade } from './cost.ts'
-import { DEFAULT_EXTRACT_BUDGET, dailyBudgetRemaining, extractTokensUsedToday, planWindows, windowBytesFor, type ExtractBudget } from './budget.ts'
+import { DEFAULT_EXTRACT_BUDGET, dailyBudgetRemaining, extractTokensUsedToday, planWindows, releaseExtractionBudget, reserveExtractionBudget, windowBytesFor, type ExtractBudget } from './budget.ts'
 import type { CapturedTurnEvent } from './processors.ts'
 import { buildIndex, DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
 import { evaluateHardReject, extractFromStateEvent, extractFromToolFailure, extractFromTrigger, TOOL_FAILURE_RE } from './extraction.ts'
@@ -367,10 +367,12 @@ export function installScheduler(ctx: Context, facility: NexusFacility, config: 
         extractTokensUsedToday([...store.costEntries()].map(([, cost]) => cost), Date.now()),
         budget,
       )
+      // 原子预留：并发会话不会各自花掉同一份每日额度（成本专家指出的越闸）
+      let budgetLeft = reserveExtractionBudget(plan.tokens, remaining)
       let spentTokens = 0
       let spentBytes = 0
       for (const window of plan.accepted) {
-        if (window.tokens > remaining) { stat.skippedWindows += 1; continue }
+        if (window.tokens > budgetLeft) { stat.skippedWindows += 1; continue }
         const output = await facility.runExtractors({
           sessionId: String(session.id),
           events: window.events,
@@ -379,14 +381,18 @@ export function installScheduler(ctx: Context, facility: NexusFacility, config: 
           signal,
         });
         candidates.push(...output.candidates);
-        remaining -= window.tokens
+        budgetLeft -= window.tokens
         spentTokens += window.tokens
         spentBytes += window.bytes
       }
+      releaseExtractionBudget(budgetLeft)
       if (spentTokens > 0) {
+        // 输出侧也记账（此前恒 0，专家实测：输出单价是输入未命中的 4 倍却完全在闸门外）
+        const outputBytes = candidates.reduce((sum, candidate) =>
+          sum + Buffer.byteLength(candidate.subject + candidate.statement, 'utf8'), 0)
         await facility.recordCost({
           kind: 'extract', sessionId: String(session.id),
-          inputTokens: spentTokens, outputTokens: 0, bytes: spentBytes,
+          inputTokens: spentTokens, outputTokens: Math.ceil(outputBytes / 3), bytes: spentBytes,
           ...(config.extractorLlm !== undefined ? { provider: config.extractorLlm.provider, model: config.extractorLlm.model } : {}),
         })
       }
