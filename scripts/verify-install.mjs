@@ -15,6 +15,7 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const local = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const installedDir = join(homedir(), '.dsh/profiles/web/node_modules/@chenqiuyushuang/dsh-nexus')
 const md5 = (path) => createHash('md5').update(readFileSync(path)).digest('hex')
+const md5Text = (text) => createHash('md5').update(text).digest('hex')
 
 if (!existsSync(installedDir)) {
   console.log('未安装：' + installedDir)
@@ -34,15 +35,24 @@ for (const file of ['lib/index.js', 'lib/nexus.html', 'lib/client.js']) {
   if (!same) ok = false
   console.log((same ? '  ✅ ' : '  ❌ ') + file + (same ? '' : '  已安装副本是旧的'))
 }
+let serviceChecked = false
 try {
-  const html = await (await fetch('http://127.0.0.1:3080/nexus')).text()
-  const served = md5(Buffer.from(html))
+  const response = await fetch('http://127.0.0.1:3080/nexus')
+  const html = await response.text()
+  const served = md5Text(html)
   const localHtml = md5(fileURLToPath(new URL('../lib/nexus.html', import.meta.url)))
   const fresh = served === localHtml
+  serviceChecked = true
   if (!fresh) ok = false
-  console.log((fresh ? '  ✅ ' : '  ❌ ') + '运行中的服务返回的面板' + (fresh ? '' : ' 是旧版（改完要重启 dsh web）'))
-} catch {
-  console.log('  ⚠️  无法访问 http://127.0.0.1:3080/nexus（服务没在跑？）')
+  console.log((fresh ? '  ✅ ' : '  ❌ ') + '运行中的服务返回的面板' + (fresh ? '' : ' 是旧版（重启 dsh web 才会生效）'))
+} catch (error) {
+  console.log('  ⚠️  服务未运行（' + (error && error.message ? error.message : '连不上 127.0.0.1:3080') + '）')
 }
-console.log(ok ? '\n一切就绪。' : '\n需要：dsh plugin --profile web add "file:' + join(root, 'dsh-nexus-' + local.version + '.tgz') + '" 然后重启 dsh web')
+if (!ok) {
+  console.log('\n需要：dsh plugin --profile web add "file:' + join(root, 'dsh-nexus-' + local.version + '.tgz') + '" 然后重启 dsh web')
+} else if (!serviceChecked) {
+  console.log('\n安装已就绪；服务没在跑，启动（dsh web）后再跑一次这个命令即可确认面板为最新。')
+} else {
+  console.log('\n一切就绪。')
+}
 process.exit(ok ? 0 : 1)
