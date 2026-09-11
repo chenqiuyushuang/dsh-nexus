@@ -109,6 +109,8 @@ body {
   --nx-scrollbar-thumb-hover: var(--nx-static-neutral-300);
   --nx-bg-card-elevated: var(--nx-static-neutral-bluish-00);
   --nx-border-card: rgba(0, 0, 0, 0.1);
+  /* 标签底色：暗色用半透明白叠加，保证与行底 ΔL* ≥ 3（原来两者同色 → 标签看不见） */
+  --nx-tag-bg: var(--nx-bg-active);
 }
 
 /* ---- 暗色 alias（design-platform.css body[data-ds-dark-theme] alias） ---- */
@@ -144,6 +146,7 @@ body[data-ds-dark-theme] {
   --nx-scrollbar-thumb-hover: var(--nx-static-neutral-bluish-600);
   --nx-bg-card-elevated: var(--nx-static-neutral-bluish-800);
   --nx-border-card: rgba(255, 255, 255, 0.12);
+  --nx-tag-bg: rgba(255, 255, 255, 0.10);
 }
 
 /* ---- 页面基础 ---- */
@@ -260,15 +263,12 @@ html.embedded .nx-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; paddin
 .nx-tag-sep { color: var(--nx-text-muted); font-size: 12px; opacity: 0.7; }
 .nx-tag {
   font-size: 12px; line-height: 1.5; padding: 2px 9px; border-radius: var(--nx-radius-sm);
-  border: 1px solid transparent; background: var(--nx-bg-accent); color: var(--nx-accent-text);
+  border: 1px solid transparent; background: var(--nx-tag-bg); color: var(--nx-text-secondary);
 }
-.nx-tag.scope { background: var(--nx-bg-accent); color: var(--nx-accent-text); }
-.nx-tag.slot-personal { background: var(--nx-success-soft); color: var(--nx-success-text); }
-.nx-tag.slot-user { background: var(--nx-success-soft); color: var(--nx-success-text); }
-.nx-tag.slot-project { background: var(--nx-warn-soft); color: var(--nx-warn-text); }
-.nx-tag.slot-episode { background: var(--nx-accent-soft); color: var(--nx-accent-text); }
-.nx-tag.slot-feedback { background: var(--nx-bg-active); color: var(--nx-accent-text); }
-.nx-tag.slot-reference { background: var(--nx-bg-subtle); color: var(--nx-text-secondary); }
+.nx-tag.scope { background: var(--nx-tag-bg); color: var(--nx-text-secondary); }
+/* 颜色只给状态：槽位/资料标签一律中性（原来用了 4 种色相，噪音大且与状态抢注意力） */
+.nx-tag.slot-personal, .nx-tag.slot-user, .nx-tag.slot-project,
+.nx-tag.slot-episode, .nx-tag.slot-feedback, .nx-tag.slot-reference { background: var(--nx-tag-bg); color: var(--nx-text-secondary); }
 .nx-tag.status-active { background: transparent; border-color: var(--nx-success); color: var(--nx-success-text); }
 .nx-tag.status-pending { background: transparent; border-color: var(--nx-warn); color: var(--nx-warn-text); }
 .nx-tag.status-needs-review { background: transparent; border-color: var(--nx-error); color: var(--nx-error-text); }
@@ -358,6 +358,16 @@ html.embedded .nx-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; paddin
 .nx-empty-hint { font-size: 12.5px; color: var(--nx-text-tertiary); }
 /* 轻量虚拟化：滚动到视口外不再布局（1000 条以上时首屏只渲染可见行附近） */
 .nx-row { content-visibility: auto; contain-intrinsic-size: auto 72px; }
+
+/* ---- B7 作用域占比条（颜色只给作用域/状态） ---- */
+.nx-scopebar { margin: 0 0 14px; }
+.nx-scopebar-track { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--nx-bg-active); }
+.nx-scopebar-track i { display: block; height: 100%; }
+.nx-scopebar-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 12px; color: var(--nx-text-tertiary); }
+.nx-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+.nx-scopebar-track i.scope-user, .nx-dot.scope-user { background: var(--nx-success); }
+.nx-scopebar-track i.scope-project, .nx-dot.scope-project { background: var(--nx-warn); }
+.nx-scopebar-track i.scope-episode, .nx-dot.scope-episode { background: var(--nx-accent); }
 
 /* ---- B2 分页与计数 ---- */
 .nx-count { align-self: center; font-size: 12px; color: var(--nx-text-tertiary); margin-left: auto; font-variant-numeric: tabular-nums; }

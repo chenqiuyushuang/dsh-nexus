@@ -53,11 +53,15 @@ describe('B3 折叠行', () => {
     expect(html).not.toContain('权重:')
     expect(html).not.toContain('归档')
     expect(html).not.toContain('移入回收站')
+    // B7 验收：单行红色按钮 ≤1（折叠态实际为 0，危险操作都在「⋯」菜单里）
+    expect((html.match(/nx-btn danger/g) ?? []).length).toBeLessThanOrEqual(1)
   })
 
   it('展开后才显示元信息与截断说明', () => {
     const html = renderRow({ truncated: true, statementLength: 3200 }, { expanded: true })
     expect(html).toContain('ID:nex_row000000000001')
+    // 展开态同样保留作用域色条（颜色只给作用域/状态）
+    expect(html).toContain('nx-sbar scope-project')
     expect(html).toContain('权重:5')
     expect(html).toContain('nx-tags')
     expect(html).toContain('列表只显示前 400 字（全文 3200 字）')

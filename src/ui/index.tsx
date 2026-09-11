@@ -4,13 +4,40 @@
  */
 import { createRoot } from 'react-dom/client'
 import { NexusPanel } from './NexusPanel.tsx'
+import { applyContentFontSize, fontSizeFromQuery, isDarkTheme, pickContentFontSize } from './theme.ts'
+
+// B7：主题跟随宿主（同源 iframe 读宿主的 data-ds-dark-theme，跨域回退系统偏好）
+function hostIsDark(): boolean | undefined {
+  try {
+    if (window.parent !== window) return window.parent.document.body.hasAttribute('data-ds-dark-theme')
+  } catch { /* 跨域 */ }
+  return undefined
+}
 
 function applyTheme(): void {
-  const query = window.matchMedia('(prefers-color-scheme: dark)')
-  document.body.toggleAttribute('data-ds-dark-theme', query.matches)
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+  document.body.toggleAttribute('data-ds-dark-theme', isDarkTheme(hostIsDark(), prefersDark))
 }
+
+// 宿主切换主题时同步（设置面板里改主题不必刷新）
+try {
+  if (window.parent !== window) new MutationObserver(applyTheme).observe(window.parent.document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
+} catch { /* 跨域 */ }
 applyTheme()
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme)
+
+// B7：字号跟随宿主（同源 iframe 才读得到；跨域/异常一律回退默认 14px）
+function applyHostFontSize(): void {
+  const fromQuery = fontSizeFromQuery(window.location.search)
+  if (fromQuery !== undefined) { applyContentFontSize(fromQuery); return }
+  try {
+    if (window.parent !== window) {
+      const host = window.parent.document.documentElement
+      applyContentFontSize(pickContentFontSize(window.parent.getComputedStyle(host).fontSize))
+    }
+  } catch { /* 跨域 iframe：用默认字号 */ }
+}
+applyHostFontSize()
 
 const container = document.getElementById('root')
 if (container !== null) createRoot(container).render(<NexusPanel />)

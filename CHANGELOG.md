@@ -12,6 +12,13 @@
 - `/nexus/api/memory/update` 支持 `projectRef`（指派或清除项目归属）
 - 测试：`injection-truth` 单元 5 例 + 路由级 2 例 + 面板渲染 2 例；全套 222 通过 + 5 xfail
 
+### B7 视觉与主题
+- 颜色只给状态：槽位/资料标签统一中性底，作用域改由行首色条表达（折叠与展开都在）
+- 新增作用域占比条（`/state` 的 `byScope`）：分段进度 + 图例，`role="img"` + 整句 aria-label；占比用最大余数法，三项相加恒为 100%
+- 暗色标签不再「消失」：新增 `--nx-tag-bg`（亮色 bluish-100 / 暗色 `rgba(255,255,255,.10)`），并加 ΔL* ≥ 3 的算术测试（原来 --nx-bg-accent 与行底同为 bluish-800）
+- 主题与字号跟随宿主：嵌入态读宿主的 `data-ds-dark-theme`（MutationObserver 同步切换）与计算字号；`?fontSize=` 可覆盖，越界夹到 12–17，跨域回退 14
+- 验收：折叠行红色按钮 0（标准 ≤1）；行高预算 38px + 行距 6px → 一屏约 10 条（标准 ≥8）
+- 测试：theme 3 例 + scopebar 4 例 + 对比度新增 2 例（ΔL*）；全套 277 通过 + 5 xfail
 ### B6 可访问性
 - 键盘：`/` 聚焦搜索（输入框内不抢键）；「⋯」菜单打开即聚焦首项、↑↓ 环绕、Home/End、Esc 关闭并把焦点还给按钮；下拉筛选同样支持方向键/Esc/回焦
 - 语义：列表 `role="list"` / 行 `role="listitem"`；结果计数为 `role="status" aria-live="polite"`（toast 已是 polite 播报）

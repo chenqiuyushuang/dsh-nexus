@@ -113,6 +113,7 @@ export function MemoryRow({
   return (
     <div className={'nx-row' + (selected ? ' selected' : '') + (expanded ? ' open' : '')} role="listitem">
       <div className="nx-row-head">
+        <span className={'nx-sbar scope-' + item.scope} aria-hidden="true" />
         <input
           type="checkbox"
           className="nx-check"
@@ -129,7 +130,6 @@ export function MemoryRow({
           </div>
         ) : (
           <>
-            <span className={'nx-sbar scope-' + item.scope} aria-hidden="true" />
             <div
               className="nx-statement folded"
               role="button"

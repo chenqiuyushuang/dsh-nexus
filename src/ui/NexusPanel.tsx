@@ -4,6 +4,8 @@ import { Chip, Btn, Select } from './components.tsx'
 import { MemoryRow } from './MemoryRow.tsx'
 import type { MemoryRowItem } from './MemoryRow.tsx'
 import { isPlainSlash, shouldHandleSlashKey } from './keyboard.ts'
+import { ScopeBar } from './ScopeBar.tsx'
+import type { ScopeCounts } from './ScopeBar.tsx'
 import { InjectionBar } from './InjectionBar.tsx'
 import type { InjectionTruthView, ProjectRefView } from './InjectionBar.tsx'
 
@@ -17,6 +19,8 @@ interface NexusState {
   conflicts: number
   degraded: boolean
   cost: { inject: CostAggregate; extract: CostAggregate }
+  /** B7：作用域计数（用户/项目/会话）。 */
+  byScope?: ScopeCounts
   /** B4：默认查看的项目 + 可选项目清单 + 注入真相。 */
   project?: string
   projects?: ProjectRefView[]
@@ -345,6 +349,8 @@ export function NexusPanel(): React.ReactNode {
         </div>
         <button className="nx-btn" onClick={() => setShowSettings((s) => !s)}>{showSettings ? '收起设置' : '设置'}</button>
       </header>
+
+      <ScopeBar counts={state?.byScope} />
 
       {state?.injection !== undefined && (
         <InjectionBar

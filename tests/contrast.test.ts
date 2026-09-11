@@ -25,6 +25,41 @@ function parseRgb(value: string): Rgb | undefined {
   return [Number(match[1]), Number(match[2]), Number(match[3])]
 }
 
+function parseColor(value: string): { rgb: Rgb; alpha: number } | undefined {
+  const rgba = /rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)/.exec(value)
+  if (rgba !== null) return { rgb: [Number(rgba[1]), Number(rgba[2]), Number(rgba[3])], alpha: Number(rgba[4]) }
+  const rgb = parseRgb(value)
+  return rgb === undefined ? undefined : { rgb, alpha: 1 }
+}
+
+/** 解析 token 到带透明度的颜色（暗色标签是 rgba 叠加）。 */
+function resolveColor(name: string, aliases: Map<string, string>): { rgb: Rgb; alpha: number } {
+  let current = name.replace(/^--/, '')
+  for (let depth = 0; depth < 6; depth += 1) {
+    const value = aliases.get(current) ?? statics.get(current)
+    if (value === undefined) throw new Error('未定义的 token: --' + current)
+    const color = parseColor(value)
+    if (color !== undefined) return color
+    const ref = /var\(--([a-z0-9-]+)\)/.exec(value)
+    if (ref === null) throw new Error('无法解析: --' + current + ' = ' + value)
+    current = ref[1]
+  }
+  throw new Error('var() 链过深: ' + name)
+}
+
+/** 半透明叠加到不透明底色上。 */
+function composite(over: { rgb: Rgb; alpha: number }, under: Rgb): Rgb {
+  const mix = (index: number): number => Math.round(over.alpha * over.rgb[index] + (1 - over.alpha) * under[index])
+  return [mix(0), mix(1), mix(2)]
+}
+
+/** CIE L*（明度感知），用于「标签不能与行底同色」这类判断。 */
+function lstar(rgb: Rgb): number {
+  const y = luminance(rgb)
+  const f = y > 0.008856 ? Math.cbrt(y) : 7.787 * y + 16 / 116
+  return 116 * f - 16
+}
+
 function declarations(text: string): Map<string, string> {
   const out = new Map<string, string>()
   for (const match of text.matchAll(/--([a-z0-9-]+)\s*:\s*([^;]+);/g)) out.set(match[1], match[2].trim())
@@ -85,6 +120,12 @@ for (const [mode, aliases] of [['亮色', lightAliases], ['暗色', darkAliases]
         expect(ratio, label + ' 实际 ' + ratio.toFixed(2) + ':1').toBeGreaterThanOrEqual(4.5)
       })
     }
+
+    it('标签底色与行底 ΔL* ≥ 3（暗色下原来两者同为 bluish-800 → 标签"消失"）', () => {
+      const card = resolve('nx-bg-card-elevated', aliases)
+      const tag = composite(resolveColor('nx-tag-bg', aliases), card)
+      expect(Math.abs(lstar(tag) - lstar(card)), 'ΔL* 实际 ' + Math.abs(lstar(tag) - lstar(card)).toFixed(2)).toBeGreaterThanOrEqual(3)
+    })
 
     it('文字三档在小字场景也达标（muted 只做装饰）', () => {
       for (const token of ['nx-text-secondary', 'nx-text-tertiary', 'nx-text-muted']) {
