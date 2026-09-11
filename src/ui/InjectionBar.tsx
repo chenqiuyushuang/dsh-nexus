@@ -102,7 +102,7 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
         <div className="nx-inject-statement">{entry.statement}</div>
       </div>
       <div className="nx-inject-side">
-        <Tag text={entry.scope === 'user' ? '用户' : entry.scope === 'project' ? '项目' : '会话'} className="scope" />
+        <Tag text={entry.scope === 'user' ? '跨项目' : entry.scope === 'project' ? '本项目' : '本会话'} className="scope" />
         {entry.pinned && <Tag text="置顶" />}
         <span className="nx-inject-bytes">{entry.bytes > 0 ? entry.bytes + ' B' : '—'}</span>
       </div>
@@ -139,7 +139,7 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
       <button type="button" className="nx-inject-bar" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
         <span className="nx-inject-meter" aria-hidden="true"><i style={{ width: percent + '%' }} /></span>
         <span className="nx-inject-title">进入上下文</span>
-        <b>{truth.lines} 行</b>
+        <b>注入 {truth.lines} 条</b>
         <span className="nx-dim">·</span>
         <b>{truth.bytes} B</b>
         <span className="nx-dim">/ {truth.budgetBytes} B</span>
@@ -151,7 +151,7 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
       {open && (
         <div className="nx-inject-body">
           <div className="nx-inject-note">
-            这是「此刻新开一个会话」会注入的真实内容：声明 + {truth.lines} 行，共 {truth.textBytes} B。
+            这是「此刻新开一个会话」会注入的真实内容：声明 + {truth.lines} 条记忆，共 {truth.textBytes} B。
             同一会话内只在首轮、内容变化或超过刷新间隔时才重新注入。
           </div>
           <div className="nx-inject-project">
@@ -161,7 +161,7 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
             } />
           </div>
           <div className="nx-inject-group">
-            <div className="nx-inject-group-head"><b>已进入（{truth.shown.length}）</b><span className="nx-dim">{truth.bytes} B / {truth.budgetBytes} B</span></div>
+            <div className="nx-inject-group-head"><b>已进入（{truth.shown.length} 条）</b><span className="nx-dim">{truth.bytes} B / {truth.budgetBytes} B</span></div>
             {truth.shown.length === 0 ? <div className="nx-empty">没有记忆进入上下文。</div> : truth.shown.map((entry) => renderRow(entry, true))}
           </div>
           {groups.map((group) => (

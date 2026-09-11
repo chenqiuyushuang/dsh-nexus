@@ -30,7 +30,7 @@ export interface MemoryRowItem {
 export interface NeighborView { edge?: string; atom?: { statement: string }; other?: string }
 export interface NeighborState { loading: boolean; list: NeighborView[] | null; error?: string }
 
-const SCOPE_NAME: Record<string, string> = { user: '用户', project: '项目', episode: '会话' }
+const SCOPE_NAME: Record<string, string> = { user: '跨项目', project: '本项目', episode: '本会话' }
 const SLOT_NAME: Record<string, string> = {
   personal: '个人', user: '个人', project: '项目', episode: '会话', feedback: '反馈', reference: '资料',
 }
@@ -114,6 +114,8 @@ export function MemoryRow({
     <div className={'nx-row' + (selected ? ' selected' : '') + (expanded ? ' open' : '')} role="listitem">
       <div className="nx-row-head">
         <span className={'nx-sbar scope-' + item.scope} aria-hidden="true" />
+        {/* 折叠态没有标签行：作用域不能只由颜色传达（WCAG 1.4.1） */}
+        <span className="nx-sr-only">{SCOPE_NAME[item.scope] ?? item.scope}</span>
         <input
           type="checkbox"
           className="nx-check"
@@ -148,7 +150,7 @@ export function MemoryRow({
           type="button"
           ref={moreRef}
           className="nx-more"
-          aria-label="更多操作"
+          aria-label={'更多操作：' + item.subject}
           aria-expanded={menuOpen}
           onClick={() => { if (menuOpen) closeMenu(); else setMenuOpen(true) }}
         >⋯</button>

@@ -105,6 +105,7 @@ export function NexusPanel(): React.ReactNode {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [batchConfirm, setBatchConfirm] = useState<'archive' | 'trash' | null>(null)
   const [noiseConfirm, setNoiseConfirm] = useState(false)
+  const [showHint, setShowHint] = useState(false)
   // B5 反馈层：底部 toast（成功带 5 秒撤销；失败带原因），取代 window.alert/confirm
   const [toast, setToast] = useState<{ text: string; error?: boolean; undo?: () => void } | null>(null)
   const toastTimer = useRef<number | null>(null)
@@ -192,11 +193,18 @@ export function NexusPanel(): React.ReactNode {
     }
   }
 
-  const showToast = useCallback((text: string, undo?: () => void, error = false): void => {
-    setToast({ text, ...(undo !== undefined ? { undo } : {}), ...(error ? { error: true } : {}) })
+  // 悬停/聚焦时暂停自动消失：键盘与读屏用户需要更多时间走到「撤销」
+  const startToastTimer = useCallback((): void => {
     if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
     toastTimer.current = window.setTimeout(() => { setToast(null) }, 5000)
   }, [])
+  const pauseToastTimer = useCallback((): void => {
+    if (toastTimer.current !== null) { window.clearTimeout(toastTimer.current); toastTimer.current = null }
+  }, [])
+  const showToast = useCallback((text: string, undo?: () => void, error = false): void => {
+    setToast({ text, ...(undo !== undefined ? { undo } : {}), ...(error ? { error: true } : {}) })
+    startToastTimer()
+  }, [startToastTimer])
   const post = async (path: string, body: unknown): Promise<unknown> => {
     const data = await j<unknown>(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
     reload()
@@ -335,26 +343,18 @@ export function NexusPanel(): React.ReactNode {
     void fetchNeighbors(id)
   }
 
+  // 只给可计数、可导航的项；「降级 否」这类布尔值混进计数行是噪音（IA 专家），真降级时另有横幅
   const chips: Array<[string, string | number, string | undefined]> = state === null
     ? []
     : [
-        ['活跃', state.active, 'ok'],
+        ['在用记忆', state.active, 'ok'],
         ['待确认', state.pending, 'warn'],
         ['冲突', state.conflicts, 'bad'],
-        ['降级', state.degraded ? '是' : '否', state.degraded ? 'warn' : undefined],
+        ...(state.degraded ? [['注入已降级', 'yes', 'warn'] as [string, string | number, string | undefined]] : []),
       ]
 
   return (
     <div className="nx-app">
-      {toast !== null && (
-        <div className={toast.error === true ? 'nx-toast error' : 'nx-toast'} role="status" aria-live="polite">
-          <span className="nx-toast-text">{toast.text}</span>
-          {toast.undo !== undefined && (
-            <button onClick={() => { const undo = toast.undo; setToast(null); undo?.() }}>撤销</button>
-          )}
-          <button onClick={() => setToast(null)}>关闭</button>
-        </div>
-      )}
       <header className="nx-header">
         <div>
           <h1 className="nx-title">记忆</h1>
@@ -363,7 +363,14 @@ export function NexusPanel(): React.ReactNode {
         <button className="nx-btn" onClick={() => setShowSettings((s) => !s)}>{showSettings ? '收起设置' : '设置'}</button>
       </header>
 
-      <ScopeBar counts={state?.byScope} />
+      {state !== null && state.active >= 20 && <ScopeBar counts={state.byScope} />}
+      {state !== null && state.active < 20 && (
+        <div className="nx-scopeline">
+          在用 {state.active} 条
+          {state.byScope !== undefined ? '（跨项目 ' + String(state.byScope.user) + ' · 本项目 ' + String(state.byScope.project) + (state.byScope.episode > 0 ? ' · 本会话 ' + String(state.byScope.episode) : '') + '）' : ''}
+          {state.injection !== undefined ? ' · 注入 ' + String(state.injection.bytes) + ' B / ' + String(state.injection.budgetBytes) + ' B' : ''}
+        </div>
+      )}
 
       {state?.injection !== undefined && (
         <InjectionBar
@@ -399,7 +406,12 @@ export function NexusPanel(): React.ReactNode {
             <label className="nx-threshold-field"><span>自动接受（用户明示/工具）</span><input type="number" min={0} max={1} step={0.01} className="nx-search nx-threshold-input" value={autoT} onChange={(e) => setAutoT(e.target.value)} placeholder="0-1" /></label>
             <label className="nx-threshold-field"><span>模型推断（LLM 提取）</span><input type="number" min={0} max={1} step={0.01} className="nx-search nx-threshold-input" value={modelT} onChange={(e) => setModelT(e.target.value)} placeholder="0-1" /></label>
           </div>
-          <div className="nx-threshold-hint">自动接受：用户明示/工具写入 ≥ 此值即生效；模型推断：模型记忆 ≥ 此值才生效，否则进「待确认」。</div>
+          <button type="button" className="nx-hint-toggle" aria-expanded={showHint} onClick={() => setShowHint((v) => !v)}>
+            {showHint ? '收起说明' : '这两个阈值是什么意思？'}
+          </button>
+          {showHint && (
+            <div className="nx-threshold-hint">自动接受：用户明示/工具写入 ≥ 此值即生效；模型推断：模型记忆 ≥ 此值才生效，否则进「待确认」。</div>
+          )}
           <div className="nx-threshold nx-extractor-row">
             <span className="nx-threshold-label">LLM 提炼器</span>
             <Select ariaLabel="LLM 提炼器模型" value={extractSel} onChange={(v) => setExtractSel(v)} groups={[{ label: '关闭', options: [{ value: '', label: '（不启用）' }] }, ...modelGroups]} />
@@ -416,15 +428,15 @@ export function NexusPanel(): React.ReactNode {
           type="search"
           className="nx-search"
           aria-label="搜索记忆（按 / 聚焦）"
-          placeholder="搜索记忆内容…（按 / 聚焦）"
+          placeholder="搜索记忆…（按 /）"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
         <Select ariaLabel="作用域" value={scope} onChange={(v) => setScope(v)} options={[
           { value: '', label: '全部作用域' },
-          { value: 'user', label: '用户' },
-          { value: 'project', label: '项目' },
-          { value: 'episode', label: '会话' },
+          { value: 'user', label: '跨项目' },
+          { value: 'project', label: '本项目' },
+          { value: 'episode', label: '本会话' },
         ]} />
         <Select ariaLabel="状态" value={status} onChange={(v) => setStatus(v)} options={[
           { value: '', label: '全部状态' },
@@ -483,20 +495,6 @@ export function NexusPanel(): React.ReactNode {
         </div>
       )}
 
-      {selected.size > 0 && (
-        <div className="nx-batch" role="region" aria-label="批量操作">
-          <span className="nx-batch-count">已选 {selected.size} 条</span>
-          <Btn kind="primary" onClick={batchConfirmActive}>确认</Btn>
-          {batchConfirm === 'archive'
-            ? <><Btn kind="danger" onClick={batchArchive}>确认归档 {selected.size} 条</Btn><Btn onClick={() => setBatchConfirm(null)}>取消</Btn></>
-            : <Btn kind="danger" onClick={() => setBatchConfirm('archive')}>归档</Btn>}
-          {batchConfirm === 'trash'
-            ? <><Btn kind="danger" onClick={batchTrash}>确认移入回收站 {selected.size} 条</Btn><Btn onClick={() => setBatchConfirm(null)}>取消</Btn></>
-            : <Btn onClick={() => setBatchConfirm('trash')}>移入回收站</Btn>}
-          <Btn onClick={clearSelection}>取消选择</Btn>
-        </div>
-      )}
-
       <div className="nx-list" role="list">
         {loading && items.length === 0 ? <div className="nx-empty">加载中…</div>
         : error !== null ? <div className="nx-empty">加载失败：{error}</div>
@@ -533,6 +531,19 @@ export function NexusPanel(): React.ReactNode {
             </Btn>
           </div>
         )}
+        {selected.size > 0 && (
+          <div className="nx-batch" role="region" aria-label="批量操作">
+            <span className="nx-batch-count">已选 {selected.size} 条</span>
+            <Btn kind="primary" onClick={batchConfirmActive}>确认</Btn>
+            {batchConfirm === 'archive'
+              ? <><Btn kind="danger" onClick={batchArchive}>确认归档 {selected.size} 条</Btn><Btn onClick={() => setBatchConfirm(null)}>取消</Btn></>
+              : <Btn kind="danger" onClick={() => setBatchConfirm('archive')}>归档</Btn>}
+            {batchConfirm === 'trash'
+              ? <><Btn kind="danger" onClick={batchTrash}>确认移入回收站 {selected.size} 条</Btn><Btn onClick={() => setBatchConfirm(null)}>取消</Btn></>
+              : <Btn onClick={() => setBatchConfirm('trash')}>移入回收站</Btn>}
+            <Btn onClick={clearSelection}>取消选择</Btn>
+          </div>
+        )}
       </div>
 
       <footer className="nx-footer">
@@ -544,6 +555,23 @@ export function NexusPanel(): React.ReactNode {
         )}
         <div>记忆保存在本机 <code>~/.dsh/nexus</code>；也可用 <code>/memory list</code>、<code>/memory search</code> 在会话中查看。</div>
       </footer>
+
+      {toast !== null && (
+        <div
+          className={toast.error === true ? 'nx-toast error' : 'nx-toast'}
+          onMouseEnter={pauseToastTimer}
+          onMouseLeave={startToastTimer}
+          onFocus={pauseToastTimer}
+          onBlur={startToastTimer}
+        >
+          {/* 只有文字在 live 区里：交互控件不应嵌在 role="status" 内（读屏会把按钮当播报内容） */}
+          <span className="nx-toast-text" role="status" aria-live="polite">{toast.text}</span>
+          {toast.undo !== undefined && (
+            <button onClick={() => { const undo = toast.undo; setToast(null); undo?.() }}>撤销</button>
+          )}
+          <button onClick={() => setToast(null)}>关闭</button>
+        </div>
+      )}
     </div>
   )
 }

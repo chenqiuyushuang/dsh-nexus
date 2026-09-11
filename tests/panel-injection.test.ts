@@ -38,7 +38,7 @@ describe('B4 注入条渲染', () => {
   it('折叠态一行给出 行数 / 字节 / 预算 / 未进入数，并说明这不是指令', () => {
     const html = render(false)
     expect(html).toContain('进入上下文')
-    expect(html).toContain('3 行')
+    expect(html).toContain('注入 3 条')
     expect(html).toContain('410 B')
     expect(html).toContain('/ 1024 B')
     expect(html).toContain('未进入 2')
@@ -49,7 +49,7 @@ describe('B4 注入条渲染', () => {
 
   it('展开后按原因分组，每组给一键动作（第 2 步就能看到怎么修）', () => {
     const html = render(true)
-    expect(html).toContain('已进入（1）')
+    expect(html).toContain('已进入（1 条）')
     expect(html).toContain('归属未知（1）')
     expect(html).toContain('单条超预算（1）')
     expect(html).toContain('按隔离规则永不注入')

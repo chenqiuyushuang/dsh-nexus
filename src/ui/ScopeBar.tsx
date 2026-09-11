@@ -8,7 +8,8 @@ import type { ReactNode } from 'react'
 export interface ScopeCounts { user: number; project: number; episode: number }
 export interface ScopeShare { scope: 'user' | 'project' | 'episode'; count: number; percent: number }
 
-const SCOPE_LABEL: Record<string, string> = { user: '用户', project: '项目', episode: '会话' }
+// 同一维度同名（原「用户/项目/会话」在占比条、筛选器、行标签三处含义漂移）
+const SCOPE_LABEL: Record<string, string> = { user: '跨项目', project: '本项目', episode: '本会话' }
 const ORDER: Array<'user' | 'project' | 'episode'> = ['user', 'project', 'episode']
 
 /** 占比（最大余数法）：count 全 0 时返回空数组。 */
@@ -41,7 +42,7 @@ export function ScopeBar({ counts }: { counts?: ScopeCounts }): ReactNode {
         {shares.map((row) => <i key={row.scope} className={'scope-' + row.scope} style={{ width: String(row.percent) + '%' }} />)}
       </div>
       <div className="nx-scopebar-legend">
-        {shares.map((row) => (
+        {shares.filter((row) => row.count > 0).map((row) => (
           <span key={row.scope}>
             <i className={'nx-dot scope-' + row.scope} aria-hidden="true" />
             {SCOPE_LABEL[row.scope] ?? row.scope} {row.count} · {row.percent}%

@@ -23,9 +23,10 @@ describe('作用域占比', () => {
 
   it('读屏描述包含三种作用域的数量与占比', () => {
     const text = scopeSummary({ user: 12, project: 20, episode: 1 })
-    expect(text).toContain('用户 12 条')
-    expect(text).toContain('项目 20 条')
-    expect(text).toContain('会话 1 条')
+    // 用词统一为跨项目/本项目/本会话（原「用户/项目/会话」在占比条、筛选器、行标签三处含义漂移）
+    expect(text).toContain('跨项目 12 条')
+    expect(text).toContain('本项目 20 条')
+    expect(text).toContain('本会话 1 条')
   })
 
   it('渲染成 role=img + aria-label，三段颜色只在装饰元素上', () => {

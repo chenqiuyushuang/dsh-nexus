@@ -112,12 +112,26 @@ const PAIRS: Array<[string, string, string]> = [
   ['操作按钮悬停（.nx-btn:hover）', 'nx-accent-text', 'nx-bg-card'],
 ]
 
+/** [说明, 前景 token, 底色 token] —— 非文本对比（WCAG 1.4.11 要求 ≥3:1）。 */
+const NON_TEXT: Array<[string, string, string]> = [
+  ['作用域色条·跨项目', 'nx-sbar-user', 'nx-bg-card'],
+  ['作用域色条·本项目', 'nx-sbar-project', 'nx-bg-card'],
+  ['作用域色条·本会话', 'nx-sbar-episode', 'nx-bg-card'],
+]
+
 for (const [mode, aliases] of [['亮色', lightAliases], ['暗色', darkAliases]] as const) {
   describe('B6 对比度 ' + mode, () => {
     for (const [label, fgToken, bgToken] of PAIRS) {
       it(label + ' ≥ 4.5:1', () => {
         const ratio = contrast(resolve(fgToken, aliases), resolve(bgToken, aliases))
         expect(ratio, label + ' 实际 ' + ratio.toFixed(2) + ':1').toBeGreaterThanOrEqual(4.5)
+      })
+    }
+
+    for (const [label, fgToken, bgToken] of NON_TEXT) {
+      it(label + ' 非文本对比 ≥ 3:1', () => {
+        const ratio = contrast(resolve(fgToken, aliases), resolve(bgToken, aliases))
+        expect(ratio, label + ' 实际 ' + ratio.toFixed(2) + ':1').toBeGreaterThanOrEqual(3)
       })
     }
 

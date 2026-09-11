@@ -46,7 +46,8 @@ beforeEach(() => {
 
 afterEach(() => { act(() => { root.unmount() }); container.remove() })
 
-const moreButton = (): HTMLButtonElement => container.querySelector<HTMLButtonElement>('button[aria-label="更多操作"]')!
+// 可访问名带上了行主题（无障碍专家：50 个按钮全叫「更多操作」无法区分），用前缀匹配
+const moreButton = (): HTMLButtonElement => container.querySelector<HTMLButtonElement>('button[aria-label^="更多操作"]')!
 const menuItems = (): HTMLButtonElement[] => Array.from(container.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
 const press = (node: Element, key: string): void => { act(() => { node.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true })) }) }
 const click = (node: Element): void => { act(() => { node.dispatchEvent(new MouseEvent('click', { bubbles: true })) }) }

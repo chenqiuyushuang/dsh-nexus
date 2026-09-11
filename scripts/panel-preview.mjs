@@ -63,6 +63,14 @@ try {
   await send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
   await send('Page.navigate', { url: 'http://127.0.0.1:3080/harness' })
   await new Promise((r) => setTimeout(r, 5000))
+  if (process.argv.includes('--open-settings')) {
+    await send('Runtime.evaluate', { expression: `(() => { const frame = document.getElementById('f'); const doc = frame.contentDocument; const btn = [...doc.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === '设置'); if (btn) btn.click(); return !!btn })()` })
+    await new Promise((r) => setTimeout(r, 800))
+  }
+  if (process.argv.includes('--select-first')) {
+    await send('Runtime.evaluate', { expression: `(() => { const doc = document.getElementById('f').contentDocument; const row = doc.querySelector('.nx-row'); const cb = doc.querySelector('.nx-check'); window.__beforeTop = row ? Math.round(row.getBoundingClientRect().top) : null; if (cb) cb.click(); return window.__beforeTop })()` })
+    await new Promise((r) => setTimeout(r, 700))
+  }
   const expression = `(() => {
     const frame = document.getElementById('f')
     const doc = frame.contentDocument
@@ -80,7 +88,23 @@ try {
       sections: { header: box(doc, '.nx-header'), scopebar: box(doc, '.nx-scopebar'), inject: box(doc, '.nx-inject'), stats: box(doc, '.nx-stats'), toolbar: box(doc, '.nx-toolbar'), decisions: box(doc, '.nx-decisions'), list: box(doc, '.nx-list'), footer: box(doc, '.nx-footer') },
       toolbarRows,
       rowHeight: first ? Math.round(first.getBoundingClientRect().height) : null,
+      selectShift: (window.__beforeTop !== undefined && first) ? Math.round(first.getBoundingClientRect().top) - window.__beforeTop : null,
+      batchVisible: !!doc.querySelector('.nx-batch'),
       statementWidth: first ? Math.round((first.querySelector('.nx-statement')?.getBoundingClientRect().width ?? 0)) : null,
+      settingsBlock: box(doc, '.nx-settings'),
+      saveBtn: (() => { const b = [...doc.querySelectorAll('.nx-settings button')].find((x) => (x.textContent || '').includes('保存')); if (!b) return null; const s = win.getComputedStyle(b); const r = b.getBoundingClientRect(); return { text: b.textContent.trim(), bg: s.backgroundColor, color: s.color, w: Math.round(r.width), h: Math.round(r.height), fontSize: s.fontSize } })(),
+      hintStyle: (() => { const h = doc.querySelector('.nx-threshold-hint') || doc.querySelector('.nx-settings'); if (!h) return null; const s = win.getComputedStyle(h); return { selector: h.className, fontSize: s.fontSize, color: s.color, lineHeight: s.lineHeight } })(),
+      settingsHeight: (() => { const s = doc.querySelector('.nx-settings'); return s ? Math.round(s.getBoundingClientRect().height) : 0 })(),
+      settingsParts: (() => { const s = doc.querySelector('.nx-settings'); if (!s) return []; return [...s.children].map((c) => ({ cls: c.className.split(' ')[0], h: Math.round(c.getBoundingClientRect().height) })) })(),
+      // 「操作动线」检查：滚列表时，保存按钮与批量条是否留在视野内（嵌入态只有列表滚动）
+      staysVisibleOnScroll: (() => {
+        const save = [...doc.querySelectorAll('.nx-settings button')].find((x) => (x.textContent || '').includes('保存'))
+        const before = save ? Math.round(save.getBoundingClientRect().top) : null
+        if (list) list.scrollTop = 240
+        const after = save ? Math.round(save.getBoundingClientRect().top) : null
+        if (list) list.scrollTop = 0
+        return { before, after, moved: before !== null && after !== null ? after - before : null }
+      })(),
       listH: list ? Math.round(list.getBoundingClientRect().height) : null,
       visibleRows: list && first ? Math.floor(list.getBoundingClientRect().height / (first.getBoundingClientRect().height + 6)) : 0,
       listScrolls: list ? list.scrollHeight > list.clientHeight + 2 : false,
