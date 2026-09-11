@@ -25,6 +25,8 @@ interface NexusState {
   noise?: { count: number; ids: string[] }
   /** 价值门影子计数（只观测，不拦截）。 */
   valueGateShadow?: { accept: number; review: number; reject: number; updatedAt: number }
+  /** 可信度闭环：今日写入/拒收/注入。 */
+  today?: { line: string; saved: number; pending: number; rejected: number; injections: number; injectedBytes: number }
   /** B4：默认查看的项目 + 可选项目清单 + 注入真相。 */
   project?: string
   projects?: ProjectRefView[]
@@ -368,11 +370,20 @@ export function NexusPanel(): React.ReactNode {
       </header>
 
       {state !== null && state.active >= 20 && <ScopeBar counts={state.byScope} />}
-      {state !== null && state.active < 20 && (
+      {state !== null && (
         <div className="nx-scopeline">
-          在用 {state.active} 条
-          {state.byScope !== undefined ? '（跨项目 ' + String(state.byScope.user) + ' · 本项目 ' + String(state.byScope.project) + (state.byScope.episode > 0 ? ' · 本会话 ' + String(state.byScope.episode) : '') + '）' : ''}
-          {state.injection !== undefined ? ' · 注入 ' + String(state.injection.bytes) + ' B / ' + String(state.injection.budgetBytes) + ' B' : ''}
+          {[
+            state.active < 20
+              ? '在用 ' + String(state.active) + ' 条' + (state.byScope !== undefined
+                ? '（跨项目 ' + String(state.byScope.user) + ' · 本项目 ' + String(state.byScope.project) + (state.byScope.episode > 0 ? ' · 本会话 ' + String(state.byScope.episode) : '') + '）'
+                : '')
+              : undefined,
+            state.active < 20 && state.injection !== undefined
+              ? '注入 ' + String(state.injection.bytes) + ' B / ' + String(state.injection.budgetBytes) + ' B'
+              : undefined,
+            // 可信度闭环：今天写进了几条、拒收几条、注入几次
+            state.today?.line,
+          ].filter((part): part is string => part !== undefined && part !== '').join(' · ')}
         </div>
       )}
 

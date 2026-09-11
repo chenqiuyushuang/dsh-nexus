@@ -213,6 +213,8 @@ describe('B4 注入真相（/state + 指派项目）', () => {
     await store.putAtom(mk('nex_unkn00000000001', { subject: 'k', statement: '归属未知的项目记忆' }) as never)
     const res = await call('/nexus/api/state?project=/proj/a', { host: '127.0.0.1:3080' })
     expect(res.status).toBe(200)
+    // 可信度闭环：今日流量必须随 /state 一起给出
+    expect(JSON.parse(res.body).today.line).toContain('今日写入')
     const data = JSON.parse(res.body)
     expect(data.project).toBe('/proj/a')
     expect(data.injection.lines).toBe(2)

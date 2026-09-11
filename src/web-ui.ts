@@ -17,6 +17,7 @@ import { DEFAULT_EXTRACT_BUDGET } from './budget.ts'
 import { DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
 import { injectionTruth, defaultProjectRef, projectRefs } from './injection-truth.ts'
 import { collectNoise } from './noise.ts'
+import { summarizeToday } from './today.ts'
 
 /** 列表页单页上限（B2）：超过这个数量的库必须分页。 */
 const MEMORY_PAGE_MAX = 200;
@@ -116,6 +117,13 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
       degraded: shouldAutoDegrade(store, 7),
       lastSummary: store.getState().lastSummary,
       valueGateShadow: store.getState().valueGateShadow,
+      // 可信度闭环：今天的写入/拒收/注入（用户看的是自己的今天）
+      today: summarizeToday({
+        atoms: all.map(atom => ({ createdAt: atom.createdAt, status: atom.status })),
+        rejects: [...store.rejectEntries()].map(([, record]) => ({ at: record.at, source: record.source })),
+        recalls: [...store.recallEntries()].map(([, record]) => ({ at: record.at, injectedBytes: record.injectedBytes ?? 0 })),
+        now: Date.now(),
+      }),
     });
   });
   // B2：分页 + 只回面板需要的字段（此前返回全部原子 → 1000 条库首屏一次拉几十万字节）
