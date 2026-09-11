@@ -139,7 +139,7 @@ export function MemoryRow({
               onClick={() => setExpanded(true)}
               onKeyDown={(event) => onLineKey(event, true)}
             >{item.statement}</div>
-            <span className="nx-line-status">{STATUS_NAME[item.status] ?? item.status}</span>
+            <span className={'nx-line-status status-' + item.status}>{STATUS_NAME[item.status] ?? item.status}</span>
             {item.pinned === true && <span className="nx-line-pin">置顶</span>}
           </>
         )}

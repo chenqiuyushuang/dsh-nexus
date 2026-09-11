@@ -80,6 +80,7 @@ try {
       sections: { header: box(doc, '.nx-header'), scopebar: box(doc, '.nx-scopebar'), inject: box(doc, '.nx-inject'), stats: box(doc, '.nx-stats'), toolbar: box(doc, '.nx-toolbar'), decisions: box(doc, '.nx-decisions'), list: box(doc, '.nx-list'), footer: box(doc, '.nx-footer') },
       toolbarRows,
       rowHeight: first ? Math.round(first.getBoundingClientRect().height) : null,
+      statementWidth: first ? Math.round((first.querySelector('.nx-statement')?.getBoundingClientRect().width ?? 0)) : null,
       listH: list ? Math.round(list.getBoundingClientRect().height) : null,
       visibleRows: list && first ? Math.floor(list.getBoundingClientRect().height / (first.getBoundingClientRect().height + 6)) : 0,
       listScrolls: list ? list.scrollHeight > list.clientHeight + 2 : false,

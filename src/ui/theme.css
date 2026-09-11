@@ -189,6 +189,15 @@ html.embedded .nx-search { flex: 1 1 120px; min-width: 110px; }
 html.embedded .nx-chip { padding: 3px 8px; font-size: 11.5px; }
 html.embedded .nx-scopebar-track { height: 4px; }
 html.embedded .nx-scopebar-legend { margin-top: 4px; font-size: 11px; gap: 8px; }
+/* 窄栏：折叠行不再显示「活跃」（无信息量，且占掉约 1/4 正文宽度）；异常状态照常显示 */
+html.embedded .nx-line-status.status-active { display: none; }
+/* 窄栏：搜索默认收成放大镜，聚焦后展开 —— 省下一整行工具栏宽度 */
+html.embedded .nx-search {
+  flex: 0 0 46px; min-width: 46px; padding-left: 28px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2381858C' stroke-width='2.2' stroke-linecap='round'><circle cx='11' cy='11' r='7'/><path d='m20 20-3.5-3.5'/></svg>");
+  background-repeat: no-repeat; background-position: 8px center;
+}
+html.embedded .nx-search:focus { flex: 1 1 auto; min-width: 120px; }
 /* 窄栏：刷新与全选本页收进「更多」占位（列表每 15s 自动刷新，全选仍可点勾选框） */
 /* 嵌入态空间紧张：副标题让位给列表 */
 html.embedded .nx-sub { display: none; }
