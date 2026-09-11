@@ -6,7 +6,7 @@
  */
 import type { RetrieveInput, RetrievedAtom, RetrieverProcessor } from './processors.ts'
 import type { Atom, MemoryId } from './atom.ts'
-import { lastUserText, polarity, prepareAtomText, weightedOverlapPrepared, type PreparedAtomText } from './text.ts'
+import { lastUserText, prepareAtomText, rarityCoverage, tokenizeRetrieval, weightedOverlapPrepared, type PreparedAtomText } from './text.ts'
 
 export interface TextRetrieverConfig {
   readonly topK: number
@@ -75,6 +75,9 @@ export function createTextRetriever(config: TextRetrieverConfig = DEFAULT_TEXT_R
   const cache = new QueryCache(config.cacheSize)
   /** 原子预分词缓存：id → (updatedAt, 分词结果)，按 updatedAt 失效（检索热路径复用）。 */
   const prepared = new Map<string, { updatedAt: number; text: PreparedAtomText }>()
+  /** 文档频率缓存（按库版本失效）：token → 出现的原子数，用于 IDF。 */
+  let dfVersion = ''
+  let dfMap = new Map<string, number>()
   return {
     id: 'text-overlap',
     async retrieve(input: RetrieveInput, _signal: AbortSignal): Promise<RetrievedAtom[]> {
@@ -106,6 +109,25 @@ export function createTextRetriever(config: TextRetrieverConfig = DEFAULT_TEXT_R
         return rescored.sort((a, b) => b.score - a.score)
       }
       if (prepared.size > atoms.length * 2 + 16) prepared.clear()
+      // 文档频率（IDF 用）：同版本只算一次
+      if (dfVersion !== version) {
+        dfMap = new Map<string, number>()
+        for (const atom of atoms) {
+          let entry = prepared.get(atom.id)
+          if (entry === undefined || entry.updatedAt !== atom.updatedAt) {
+            entry = { updatedAt: atom.updatedAt, text: prepareAtomText(atom.subject, atom.statement, atom.cues) }
+            prepared.set(atom.id, entry)
+          }
+          const seen = new Set<string>([...entry.text.subject.tokenSet, ...entry.text.statement.tokenSet])
+          for (const token of seen) dfMap.set(token, (dfMap.get(token) ?? 0) + 1)
+        }
+        dfVersion = version
+      }
+      const idf = (token: string): number => {
+        const df = dfMap.get(token) ?? 0
+        return Math.log(1 + (atoms.length - df + 0.5) / (df + 0.5))
+      }
+      const queryTokens = new Set(tokenizeRetrieval(query))
       const ranked: { atom: Atom; score: number }[] = []
       for (const atom of atoms) {
         // 极性只做软惩罚（text.ts ×0.2）：硬过滤会让「不要用 pnpm」这类否定查询空召回（IR 专家实测）
@@ -114,7 +136,17 @@ export function createTextRetriever(config: TextRetrieverConfig = DEFAULT_TEXT_R
           entry = { updatedAt: atom.updatedAt, text: prepareAtomText(atom.subject, atom.statement, atom.cues) }
           prepared.set(atom.id, entry)
         }
-        const score = weightedOverlapPrepared(query, entry.text)
+        const base = weightedOverlapPrepared(query, entry.text)
+        if (base <= 0) continue
+        // 稀有度因子：命中里含罕用词越多，加权越高（压常见字主导）
+        const coverage = rarityCoverage(
+          queryTokens,
+          token => entry!.text.subject.tokenSet.has(token)
+            || entry!.text.statement.tokenSet.has(token)
+            || entry!.text.cues.some(cue => cue.tokenSet.has(token)),
+          idf,
+        )
+        const score = base * (0.5 + 0.5 * coverage)
         if (score <= 0.02) continue
         ranked.push({ atom, score })
       }

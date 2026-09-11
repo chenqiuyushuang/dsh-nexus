@@ -124,6 +124,26 @@ export function prepareAtomText(subject: string, statement: string, cues: readon
   }
 }
 
+/**
+ * 稀有度覆盖：Σ idf(命中 token) / Σ idf(query token)，0..1。
+ * 无 IDF 时常见字（用/的/是）与罕用词等权，长查询里无关原子会盖过正确原子
+ * （IR 专家实测：正确 0.0275 vs 无关 0.2681）。本函数给检索分数加稀有度因子。
+ */
+export function rarityCoverage(
+  queryTokens: ReadonlySet<string>,
+  matched: (token: string) => boolean,
+  idf: (token: string) => number,
+): number {
+  let total = 0
+  let hit = 0
+  for (const token of queryTokens) {
+    const weight = idf(token)
+    total += weight
+    if (matched(token)) hit += weight
+  }
+  return total === 0 ? 0 : hit / total
+}
+
 /** 与 weightedOverlap 同分，但复用预分词结果。 */
 export function weightedOverlapPrepared(query: string, atom: PreparedAtomText): number {
   const queryTokens = new Set(tokenizeRetrieval(query))
