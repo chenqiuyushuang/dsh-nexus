@@ -60,13 +60,6 @@ export const memorySourceSchema = zod.object({
 })
 export type MemorySource = zod.infer<typeof memorySourceSchema>
 
-export const atomEmbeddingSchema = zod.object({
-  provider: zod.string().min(1),
-  dim: zod.number().int().positive(),
-  vec: zod.array(zod.number()),
-})
-export type AtomEmbedding = zod.infer<typeof atomEmbeddingSchema>
-
 /**
  * Atom v2 - the single memory record.
  * Durably validated by the nexus_memory domain atoms table schema.
@@ -96,7 +89,6 @@ export const atomSchema = zod.object({
   supersedes: zod.string().regex(MEMORY_ID_RE).optional(),
   supersededBy: zod.string().regex(MEMORY_ID_RE).optional(),
   sources: zod.array(memorySourceSchema).default([]),
-  embedding: atomEmbeddingSchema.optional(),
   createdAt: zod.number().int().nonnegative(),
   updatedAt: zod.number().int().nonnegative(),
   reviewedAt: zod.number().int().nonnegative().optional(),

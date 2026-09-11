@@ -12,6 +12,10 @@
 - `/nexus/api/memory/update` 支持 `projectRef`（指派或清除项目归属）
 - 测试：`injection-truth` 单元 5 例 + 路由级 2 例 + 面板渲染 2 例；全套 222 通过 + 5 xfail
 
+### 功能面审计 + 删除真·死字段
+- 核对专家团「删除清单」的真实影响面：`atom.embedding` 是真死字段（无读写、磁盘无记录、schema 非 strict）→ 已删；`vector`/`integrator`/`skill-compiler` 都**仍可触发**（配置项或 `/memory` 命令），属于「砍功能」而非清死代码 → 影响面写入 docs/V0.9-SURFACE-AUDIT.md 待决策
+- 证据：`~/.dsh/nexus/` 无 `skills.draft/`（skill-compile 从未运行）、配置里无 vector/integrator、三个模块合计 288 行零测试覆盖
+- 测试 311 通过 + 5 xfail
 ### V0.5 可信度闭环：今天到底写进了几条真东西
 - 动机：产品专家指出系统只有「总量」没有「今日流量」——用户无法判断它今天是在学习还是在污染；清理一次垃圾建立不了信任，连续几天看到「写入少、拒收有、注入有」才是可信信号
 - 新增 `src/today.ts`（纯函数）：按**本地日历日**统计写入（排除当天归档）/待确认/拒收（区分规则拒收与用户拒收）/注入次数与字节
