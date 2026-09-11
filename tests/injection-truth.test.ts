@@ -61,6 +61,19 @@ describe('injectionTruth 与运行时一致', () => {
     expect(truth.omitted).toBe(truth.counts.oversize + truth.counts.budget)
   })
 
+  it('已归档/已取代不计入「未进入」，单独计数（否则清理后徽标仍是几十条）', () => {
+    const active = mkAtom({ scope: 'user', slot: 'personal', subject: 'a', statement: '活跃的' })
+    const archivedAtom = mkAtom({ scope: 'user', slot: 'personal', status: 'archived', subject: 'b', statement: '归档的' })
+    const superseded = mkAtom({ scope: 'user', slot: 'personal', status: 'superseded', subject: 'c', statement: '被取代的' })
+    const pending = mkAtom({ scope: 'user', slot: 'personal', status: 'pending', subject: 'd', statement: '待确认的' })
+    const truth = injectionTruth([active, archivedAtom, superseded, pending], { budgetBytes: 4096, projectRef: '/p' })
+    expect(truth.archived).toBe(2)
+    expect(truth.dropped).toHaveLength(1)
+    expect(truth.dropped[0]?.reason).toBe('inactive')
+    expect(truth.dropped[0]?.detail).toContain('确认后才参与')
+    expect(truth.counts.inactive).toBe(1)
+  })
+
   it('会话记忆带上产生它的 sessionId 后才会进入', () => {
     const episode = mkAtom({ scope: 'episode', slot: 'episode', subject: '会话', statement: '当次会话的决定', sources: [mkSource('s-1')] })
     expect(injectionTruth([episode], { budgetBytes: 4096, projectRef: '/proj/a' }).counts.episode).toBe(1)

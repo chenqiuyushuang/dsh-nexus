@@ -23,6 +23,7 @@ const truth: InjectionTruthView = {
     { id: 'nex_c', slot: 'project', scope: 'project', status: 'active', subject: '超长', statement: '很长的一条', bytes: 3000, pinned: false, weight: 1, reason: 'oversize', detail: '永远进不去' },
   ],
   counts: { 'unknown-project': 1, oversize: 1 },
+  archived: 27,
 }
 
 function render(open: boolean): string {
@@ -41,6 +42,7 @@ describe('B4 注入条渲染', () => {
     expect(html).toContain('410 B')
     expect(html).toContain('/ 1024 B')
     expect(html).toContain('未进入 2')
+    expect(html).toContain('已归档 27')
     expect(html).toContain('为什么')
     expect(html).not.toContain('归属未知')
   })

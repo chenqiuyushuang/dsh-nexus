@@ -34,6 +34,8 @@ export interface InjectionTruthView {
   shown: InjectionEntryView[]
   dropped: InjectionDropView[]
   counts: Record<string, number>
+  /** 已归档/已取代条数（彻底出局，不计入「未进入」）。 */
+  archived?: number
 }
 export interface ProjectRefView { ref: string; active: number; total: number; updatedAt: number }
 
@@ -143,6 +145,7 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
         <span className="nx-dim">/ {truth.budgetBytes} B</span>
         {truth.pinned > 0 && <Tag text={'置顶 ' + truth.pinned} />}
         <span className={truth.dropped.length > 0 ? 'nx-inject-badge warn' : 'nx-inject-badge'}>未进入 {truth.dropped.length}</span>
+        {(truth.archived ?? 0) > 0 && <span className="nx-inject-badge">已归档 {truth.archived}</span>}
         <span className="nx-inject-caret" aria-hidden="true">{open ? '收起' : '为什么'}</span>
       </button>
       {open && (
@@ -171,6 +174,9 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
             </div>
           ))}
           {truth.dropped.length === 0 && <div className="nx-empty">全部活跃记忆都已进入上下文。</div>}
+          {(truth.archived ?? 0) > 0 && (
+            <div className="nx-inject-note">另有 {truth.archived} 条已归档/已取代，已彻底退出注入范围（不限时间也不会进上下文）。</div>
+          )}
         </div>
       )}
     </section>

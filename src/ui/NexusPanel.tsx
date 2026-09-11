@@ -233,9 +233,11 @@ export function NexusPanel(): React.ReactNode {
   const cleanNoise = (): void => {
     const ids = state?.noise?.ids ?? []
     if (ids.length === 0) return
-    void runAction('/nexus/api/memory/reject', { ids }, '已归档 ' + String(ids.length) + ' 条子代理噪音',
-      () => { void runAction('/nexus/api/memory/restore', { ids, any: true }, '已恢复噪音条目') })
     setNoiseConfirm(false)
+    // 清理后自动切到「活跃」：否则列表仍显示全部状态，27 条归档条目还在眼前，看着像没生效
+    setStatus('active')
+    void runAction('/nexus/api/memory/reject', { ids }, '已归档 ' + String(ids.length) + ' 条无效记忆（列表已切到「活跃」）',
+      () => { void runAction('/nexus/api/memory/restore', { ids, any: true }, '已恢复') })
   }
   const selectPage = (): void => { setSelected(new Set(items.map((item) => item.id))); setBatchConfirm(null) }
   const selectedIds = [...selected]

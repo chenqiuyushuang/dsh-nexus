@@ -107,6 +107,7 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
         shown: truth.shown,
         dropped: truth.dropped,
         counts: truth.counts,
+        archived: truth.archived,
       },
       cost: summarizeCosts(store),
       degraded: shouldAutoDegrade(store, 7),

@@ -52,6 +52,8 @@ export interface InjectionTruth {
   /** 因预算被挤掉的条数（与 buildIndex.omitted 一致）。 */
   readonly omitted: number
   readonly pinnedInjected: number
+  /** 已归档/已取代/已拒绝的条数（彻底出局，不计入「未进入」）。 */
+  readonly archived: number
   readonly shown: readonly InjectionEntry[]
   readonly dropped: readonly InjectionDrop[]
   readonly counts: Readonly<Record<DropReason, number>>
@@ -93,9 +95,16 @@ export function injectionTruth(atoms: readonly Atom[], options: TruthOptions): I
   const wanted = options.projectRef !== undefined && options.projectRef !== '' ? options.projectRef : UNKNOWN_PROJECT
   const inScope: Atom[] = []
   const dropped: InjectionDrop[] = []
+  let archived = 0
   for (const atom of atoms) {
+    // 已归档/已取代/已拒绝：彻底出局，不计入「未进入」（否则一键清理后这个数字仍然巨大，看着像没生效）
+    if (atom.status === 'archived' || atom.status === 'superseded') {
+      archived += 1
+      continue
+    }
+    // 待确认/冲突仍计入：修好它们就能进上下文，属于可操作项
     if (atom.status !== 'active') {
-      dropped.push({ ...base(atom), reason: 'inactive', detail: '状态为「' + (STATUS_NAME[atom.status] ?? atom.status) + '」，不参与自动注入' })
+      dropped.push({ ...base(atom), reason: 'inactive', detail: '状态为「' + (STATUS_NAME[atom.status] ?? atom.status) + '」，确认后才参与自动注入' })
       continue
     }
     if (atom.scope === 'user') { inScope.push(atom); continue }
@@ -146,6 +155,7 @@ export function injectionTruth(atoms: readonly Atom[], options: TruthOptions): I
     lines: shown.length,
     omitted: counts.oversize + counts.budget,
     pinnedInjected: shown.filter(entry => entry.pinned).length,
+    archived,
     shown,
     dropped,
     counts,
