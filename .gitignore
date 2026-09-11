@@ -33,3 +33,4 @@ session*.zstd
 # 运行时可能落地的本地状态
 .nexus/
 *.local.json
+*.tgz
