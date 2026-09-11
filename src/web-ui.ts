@@ -13,19 +13,21 @@ import { deterministCues, hash16 } from './extraction.ts'
 import { summarizeCosts, shouldAutoDegrade } from './cost.ts'
 import { neighborsOf } from './edges.ts'
 import { DEFAULT_EXTRACT_BUDGET } from './budget.ts'
+import { buildIndex, DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
 
 declare interface NexusWebServer {
   register(route: { kind: "exact"; path: string; handler: (req: unknown, res: unknown) => void | Promise<void> }): () => void;
 }
 
 /** 安装 /nexus 路由（host 无 webServer 时安全跳过）。 */
-export function installNexusWeb(ctx: Context, facility: NexusFacility, options: { readonly allowRemote?: boolean } = {}): void {
+export function installNexusWeb(ctx: Context, facility: NexusFacility, options: { readonly allowRemote?: boolean; readonly indexBudgetBytes?: number } = {}): void {
   const webServer = ctx.get('webServer') as NexusWebServer | undefined;
   if (webServer === undefined) {
     console.warn("nexus: webServer 不可用，/nexus 面板跳过（功能不受影响）");
     return;
   }
   const allowRemote = options.allowRemote === true;
+  const config_indexBudget = (): number => options.indexBudgetBytes ?? DEFAULT_INDEX_BUDGET_BYTES;
   const guard = (mutation: boolean) => (req: unknown, res: unknown): boolean => {
     if (isLocalPanelRequest(req, mutation, allowRemote)) return true;
     sendJson(res, 403, { error: "untrusted origin" });
@@ -47,6 +49,14 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
       pending: all.filter(a => a.status === "pending").length,
       conflicts: all.filter(a => a.status === "needs-review").length,
       byScope: { user: active.filter(a => a.scope === "user").length, project: active.filter(a => a.scope === "project").length, episode: active.filter(a => a.scope === "episode").length },
+      // 回收站 = 用户显式移入的（与系统归档区分），UI 需要独立计数
+      trash: all.filter(a => a.status === "archived" && a.reviewNote === "user-deleted").length,
+      archivedBySystem: all.filter(a => a.status === "archived" && a.reviewNote !== "user-deleted").length,
+      // 注入预算可视化（置顶会不会挤掉别人）
+      injection: (() => {
+        const index = buildIndex(active, config_indexBudget())
+        return { budgetBytes: config_indexBudget(), lines: index.lines, omitted: index.omitted, pinned: active.filter(a => a.pinned).length }
+      })(),
       cost: summarizeCosts(store),
       degraded: shouldAutoDegrade(store, 7),
       lastSummary: store.getState().lastSummary,
@@ -57,10 +67,15 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     const store = await facility.store();
     const url = new URL((req as { url?: string }).url ?? "/", "http://localhost");
     const scope = url.searchParams.get("scope") ?? "";
+    const status = url.searchParams.get("status") ?? "";
+    const reviewNote = url.searchParams.get("reviewNote") ?? "";
     const query = (url.searchParams.get("q") ?? "").trim();
-    const limit = Number(url.searchParams.get("limit") ?? 50) || 50;
+    const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") ?? 100) || 100));
+    // 服务端筛选（专家实测：此前 status 参数不存在，前端在 limit 截断后过滤 → 库 >80 静默漏报）
     const items = [...store.atomEntries()].map(([, a]) => a)
       .filter(a => scope === "" || a.scope === scope)
+      .filter(a => status === "" || a.status === status)
+      .filter(a => reviewNote === "" || a.reviewNote === reviewNote)
       .filter(a => query.length === 0 || (a.subject + a.statement).toLowerCase().includes(query.toLowerCase()))
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, limit);
@@ -166,7 +181,8 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     let purged = 0;
     for (const id of ids) {
       const atom = store.getAtom(id);
-      if (atom === undefined) continue;
+      // 回收站是唯一真删入口：系统归档的条目不允许被"彻底清除"（交互/IA 专家共识）
+      if (atom === undefined || atom.reviewNote !== "user-deleted") continue;
       await store.deleteAtom(id);
       for (const [edgeId, edge] of [...store.edgeEntries()]) {
         if (edge.from === id || edge.to === id) await store.deleteEdge(edgeId);
@@ -196,14 +212,21 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     const ids = Array.isArray(body?.ids) ? body.ids.map(String) : [];
     const store = await facility.store();
     let restored = 0;
+    let skipped = 0;
     for (const id of ids) {
       const atom = store.getAtom(id);
-      if (atom !== undefined && atom.status === "archived") {
-        await store.updateAtom(id, current => ({ ...current, status: "active" as const, updatedAt: Date.now(), reviewNote: undefined }));
-        restored += 1;
+      // 只恢复"用户移入回收站"的条目：系统归档（去重/过期/清理）不因一次点击复活（IA/交互专家共识）
+      if (atom === undefined || atom.status !== "archived" || atom.reviewNote !== "user-deleted") { skipped += 1; continue }
+      await store.updateAtom(id, current => ({ ...current, status: "active" as const, updatedAt: Date.now(), reviewNote: undefined }));
+      // 撤销必须连黑名单一起回滚，否则重提同句会被静默再归档（交互专家实测）
+      const sample = atom.statement.slice(0, 500);
+      for (const [rejectId, record] of [...store.rejectEntries()]) {
+        if (record.source === "user-reject" && record.sample === sample) await store.deleteReject(rejectId);
       }
+      restored += 1;
     }
-    sendJson(res, 200, { restored });
+    await facility.touch();
+    sendJson(res, 200, { restored, skipped });
   });
   route("/nexus/api/settings", async (_req, res) => {
     const store = await facility.store();

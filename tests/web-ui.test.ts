@@ -49,7 +49,7 @@ function boot(options: { allowRemote?: boolean } = {}) {
   installNexusWeb(ctx as never, facility as never, options)
   const call = async (path: string, headers: Record<string, string>, body?: unknown): Promise<FakeRes> => {
     const target: FakeRes = { status: 0, body: '', writeHead(s) { target.status = s }, end(s) { target.body = s } }
-    const route = routes.find(candidate => candidate.path === path)
+    const route = routes.find(candidate => candidate.path === path.split('?')[0])
     if (route === undefined) throw new Error('route missing: ' + path)
     const payload = body === undefined ? '' : JSON.stringify(body)
     const req = {
@@ -118,11 +118,38 @@ describe('面板操作：置顶 / 回收站 / 彻底清除', () => {
     const del = await call('/nexus/api/memory/delete', LEGIT, { ids: ['nex_trash00000000001'] })
     expect(del.status).toBe(200)
     expect(store.getAtom('nex_trash00000000001' as never)?.status).toBe('archived')
+    expect(store.getAtom('nex_trash00000000001' as never)?.reviewNote).toBe('user-deleted')
+
+    // 恢复：黑名单一并回滚，且只有回收站条目可恢复
     const restore = await call('/nexus/api/memory/restore', LEGIT, { ids: ['nex_trash00000000001'] })
     expect(restore.status).toBe(200)
+    expect(JSON.parse(restore.body).restored).toBe(1)
+    expect(store.getAtom('nex_trash00000000001' as never)?.status).toBe('active')
+
+    // 系统归档（非 user-deleted）既不可恢复也不可从面板彻底清除
+    await store.putAtom({ ...mk('nex_sysarch000000001'), status: 'archived', reviewNote: 'auto-junk-cleanup' } as never)
+    const refusedRestore = await call('/nexus/api/memory/restore', LEGIT, { ids: ['nex_sysarch000000001'] })
+    expect(JSON.parse(refusedRestore.body).restored).toBe(0)
+    const refusedPurge = await call('/nexus/api/memory/purge', LEGIT, { ids: ['nex_sysarch000000001'] })
+    expect(JSON.parse(refusedPurge.body).purged).toBe(0)
+    expect(store.getAtom('nex_sysarch000000001' as never)).toBeDefined()
+
+    // 回收站 → 彻底清除（唯一真删入口）
+    await call('/nexus/api/memory/delete', LEGIT, { ids: ['nex_trash00000000001'] })
     const purge = await call('/nexus/api/memory/purge', LEGIT, { ids: ['nex_trash00000000001'] })
     expect(purge.status).toBe(200)
+    expect(JSON.parse(purge.body).purged).toBe(1)
     expect(store.getAtom('nex_trash00000000001' as never)).toBeUndefined()
+  })
+
+  it('服务端筛选 status / reviewNote（修复库 >80 时前端过滤漏报）', async () => {
+    const { call, store } = boot()
+    await store.putAtom(mk('nex_pending000000001', 'pending') as never)
+    await store.putAtom(mk('nex_active0000000001', 'active') as never)
+    const pending = await call('/nexus/api/memory?status=pending', { host: '127.0.0.1:3080' })
+    const body = JSON.parse(pending.body)
+    expect(body.length).toBe(1)
+    expect(body[0].status).toBe('pending')
   })
 
   it('面板开启 LLM 提炼时使用预算默认上限（不再硬编码 60000）', async () => {

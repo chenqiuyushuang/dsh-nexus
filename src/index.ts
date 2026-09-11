@@ -96,7 +96,7 @@ export function apply(ctx: Context, config: Config): void {
     // apply 激活。用 ctx.inject 等到 webServer 就绪再注册（与 dsh-web-app 的
     // ctx.inject(['connection','webServer'], …) 同模式），避免 ctx.get 在
     // apply 早期读到 undefined 而跳过面板。
-    ctx.inject(['webServer'], (webCtx) => installNexusWeb(webCtx, facility, { allowRemote: resolved.webuiAllowRemote }))
+    ctx.inject(['webServer'], (webCtx) => installNexusWeb(webCtx, facility, { allowRemote: resolved.webuiAllowRemote, indexBudgetBytes: resolved.indexBudgetBytes }))
   }
 
   // ---- projection sync (debounced after any write event, plus one boot pass) ----
