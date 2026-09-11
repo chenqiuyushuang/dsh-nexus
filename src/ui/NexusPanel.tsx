@@ -1,6 +1,8 @@
 /** Nexus 记忆面板：独立 /nexus 页与 DSH 设置面板 iframe 共用的单一实现（React）。 */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Chip, Tag, Btn, Select } from './components.tsx'
+import { Chip, Btn, Select } from './components.tsx'
+import { MemoryRow } from './MemoryRow.tsx'
+import type { MemoryRowItem } from './MemoryRow.tsx'
 import { InjectionBar } from './InjectionBar.tsx'
 import type { InjectionTruthView, ProjectRefView } from './InjectionBar.tsx'
 
@@ -21,6 +23,7 @@ interface NexusState {
 }
 interface MemoryItem {
   id: string
+  subject: string
   scope: string
   slot: string
   status: string
@@ -56,14 +59,6 @@ interface Decisions {
 }
 
 /** 作用域展示名（三种，统一中文）。 */
-const SCOPE_NAME: Record<string, string> = { user: '用户', project: '项目', episode: '会话' }
-/** 槽位展示名（与后端判别值一一对应）。 */
-const SLOT_NAME: Record<string, string> = {
-  personal: '个人', user: '个人', project: '项目', episode: '会话', feedback: '反馈', reference: '资料',
-}
-const STATUS_NAME: Record<string, string> = {
-  pending: '待确认', 'needs-review': '冲突', active: '活跃', archived: '已归档', superseded: '已取代', rejected: '已拒绝',
-}
 
 /** 解析 /nexus/api 的 JSON 响应。 */
 async function j<T>(url: string, init?: RequestInit): Promise<T> {
@@ -75,7 +70,7 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
 interface LoadParams { q: string; s: string; st: string; p: string }
 
 /** 单页条数（服务端上限 200）。 */
-const PAGE_SIZE = 80
+const PAGE_SIZE = 50
 /** 列表查询 URL：q/scope/status 全部走服务端，避免"先截断再过滤"造成静默漏报。 */
 function memoryUrl(params: { q: string; s: string; st: string }, offset: number): string {
   return '/nexus/api/memory?q=' + encodeURIComponent(params.q)
@@ -99,12 +94,9 @@ export function NexusPanel(): React.ReactNode {
   const [error, setError] = useState<string | null>(null)
   const [neighbors, setNeighbors] = useState<Record<string, { loading: boolean; list: Neighbor[] | null; error?: string }>>({})
   const [openIds, setOpenIds] = useState<Set<string>>(new Set())
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editText, setEditText] = useState('')
-  const [editScope, setEditScope] = useState('project')
-  const [confirmingId, setConfirmingId] = useState<string | null>(null)
-  const [deleteId, setDeleteId] = useState<string | null>(null)
-  const [purgeId, setPurgeId] = useState<string | null>(null)
+  // B3 批量选择（复用 ids[] 路由）；行内的编辑/二次确认状态已收进 MemoryRow
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [batchConfirm, setBatchConfirm] = useState<'archive' | 'trash' | null>(null)
   // B5 反馈层：底部 toast（成功带 5 秒撤销；失败带原因），取代 window.alert/confirm
   const [toast, setToast] = useState<{ text: string; error?: boolean; undo?: () => void } | null>(null)
   const toastTimer = useRef<number | null>(null)
@@ -195,38 +187,45 @@ export function NexusPanel(): React.ReactNode {
   }
   const confirmOne = (id: string): void => { void runAction('/nexus/api/memory/confirm', { ids: [id] }, '已确认 1 条') }
 
-  // B2：列表只回了前 400 字，编辑必须先取全文（否则保存会截掉后面的内容）
-  const startEdit = async (item: MemoryItem): Promise<void> => {
-    try {
-      const full = await j<{ statement: string }>('/nexus/api/memory/get?id=' + encodeURIComponent(item.id))
-      setEditText(full.statement)
-      setEditScope(item.scope)
-      setEditingId(item.id)
-    } catch (err) {
-      showToast('读取全文失败：' + (err instanceof Error ? err.message : String(err)), undefined, true)
-    }
-  }
-  const saveEdit = async (id: string): Promise<void> => {
-    const next = editText.trim()
-    if (next === '') return
-    if (await runAction('/nexus/api/memory/update', { id, statement: next, scope: editScope }, '编辑失败')) setEditingId(null)
-  }
-  const cancelEdit = (): void => setEditingId(null)
+  // B2/B3：编辑必须先取全文（列表只回 400 字预览，照预览保存会截掉长记忆的后半段）
+  const loadFull = async (id: string): Promise<string> =>
+    (await j<{ statement: string }>('/nexus/api/memory/get?id=' + encodeURIComponent(id))).statement
+  const saveEdit = (id: string, statement: string, scope: string): Promise<boolean> =>
+    statement === '' ? Promise.resolve(false) : runAction('/nexus/api/memory/update', { id, statement, scope }, '已更新')
+  // 归档 = 归档 + 黑名单；撤销走 restore(any)，并把黑名单回滚（服务端已实现）
+  const archiveRow = (id: string): Promise<boolean> =>
+    runAction('/nexus/api/memory/reject', { ids: [id] }, '已归档 1 条（同句不再自动记住）',
+      () => { void runAction('/nexus/api/memory/restore', { ids: [id], any: true }, '已撤销归档') })
+  const deleteRow = (id: string): Promise<boolean> =>
+    runAction('/nexus/api/memory/delete', { ids: [id] }, '已移入回收站 1 条（可恢复）',
+      () => { void runAction('/nexus/api/memory/restore', { ids: [id] }, '已撤销') })
+  // 彻底清除：仅回收站条目，真删 + 清边 + 清同句拒绝样本（行内二次确认）
+  const purgeRow = (id: string): Promise<boolean> =>
+    runAction('/nexus/api/memory/purge', { ids: [id] }, '已彻底清除 1 条（内容、关系边、同句拒绝记录一并删除）')
 
-  const askArchive = (id: string): void => setConfirmingId(id)
-  const confirmArchive = async (id: string): Promise<void> => {
-    // 归档 = 归档 + 黑名单；撤销走 restore(any)，并把黑名单回滚（服务端已实现）
-    if (await runAction('/nexus/api/memory/reject', { ids: [id] }, '已归档 1 条（同句不再自动记住）',
-      () => { void runAction('/nexus/api/memory/restore', { ids: [id], any: true }, '已撤销归档') })) setConfirmingId(null)
+  // B3 批量操作：选中集合走 ids[]，成功后可撤销（归档连黑名单一起回滚）
+  const toggleSelect = (id: string, next: boolean): void => {
+    setSelected((prev) => { const copy = new Set(prev); if (next) copy.add(id); else copy.delete(id); return copy })
   }
-  const cancelArchive = (): void => setConfirmingId(null)
-
-  const askDelete = (id: string): void => setDeleteId(id)
-  const confirmDelete = async (id: string): Promise<void> => {
-    if (await runAction('/nexus/api/memory/delete', { ids: [id] }, '已移入回收站 1 条（可恢复）',
-      () => { void runAction('/nexus/api/memory/restore', { ids: [id] }, '已撤销') })) setDeleteId(null)
+  const clearSelection = (): void => { setSelected(new Set()); setBatchConfirm(null) }
+  const selectPage = (): void => { setSelected(new Set(items.map((item) => item.id))); setBatchConfirm(null) }
+  const selectedIds = [...selected]
+  const runBatch = async (path: string, label: string, undo?: () => void): Promise<void> => {
+    const ids = [...selected]
+    if (ids.length === 0) return
+    if (await runAction(path, { ids }, label, undo)) clearSelection()
   }
-  const cancelDelete = (): void => setDeleteId(null)
+  const batchConfirmActive = (): void => { void runBatch('/nexus/api/memory/confirm', '已确认 ' + String(selected.size) + ' 条') }
+  const batchArchive = (): void => {
+    const ids = [...selected]
+    void runBatch('/nexus/api/memory/reject', '已归档 ' + String(ids.length) + ' 条（同句不再自动记住）',
+      () => { void runAction('/nexus/api/memory/restore', { ids, any: true }, '已撤销归档') })
+  }
+  const batchTrash = (): void => {
+    const ids = [...selected]
+    void runBatch('/nexus/api/memory/delete', '已移入回收站 ' + String(ids.length) + ' 条（可恢复）',
+      () => { void runAction('/nexus/api/memory/restore', { ids }, '已撤销') })
+  }
 
   const startAdd = (): void => { setAdding(true); setAddText(''); setAddScope('user') }
   const cancelAdd = (): void => setAdding(false)
@@ -245,7 +244,7 @@ export function NexusPanel(): React.ReactNode {
     void runAction('/nexus/api/memory/pin', { id, pinned: next }, next ? '已置顶（下次注入优先）' : '已取消置顶',
       () => { void runAction('/nexus/api/memory/pin', { id, pinned: !next }, '已撤销') })
   }
-  const togglePin = (item: MemoryItem): void => { pinById(item.id, item.pinned !== true) }
+  const togglePin = (item: MemoryRowItem): void => { pinById(item.id, item.pinned !== true) }
 
   // B4 注入真相条：一键修好「进不去上下文」的原因（复用现有路由，失败有 toast 说明）
   const injectionActions = {
@@ -255,13 +254,8 @@ export function NexusPanel(): React.ReactNode {
     onScope: (id: string, scope: string): void => { void runAction('/nexus/api/memory/update', { id, scope }, '已改为用户级（所有项目可见）') },
     onSave: (id: string, statement: string, scope: string): void => { void runAction('/nexus/api/memory/update', { id, statement, scope }, '已更新') },
     // 注入条里的 statement 是 200 字预览；「缩短」前必须取全文，避免一编辑就截断
-    onLoad: async (id: string): Promise<string> => (await j<{ statement: string }>('/nexus/api/memory/get?id=' + encodeURIComponent(id))).statement,
+    onLoad: loadFull,
     onConfirm: (id: string): void => { confirmOne(id) },
-  }
-  // 彻底清除（仅回收站/归档行）：真删 + 清边，二次确认
-  // 彻底清除：面板内两步确认（替代 window.confirm），文案写明后果
-  const confirmPurge = async (id: string): Promise<void> => {
-    if (await runAction('/nexus/api/memory/purge', { ids: [id] }, '已彻底清除 1 条（内容、关系边、同句拒绝记录一并删除）')) setPurgeId(null)
   }
 
   const saveSettings = async (): Promise<void> => {
@@ -393,6 +387,7 @@ export function NexusPanel(): React.ReactNode {
         <Btn onClick={reload}>刷新</Btn>
         <Btn kind="primary" onClick={startAdd}>新增</Btn>
         <span className="nx-count">显示 {items.length} / 共 {total} 条</span>
+        {items.length > 0 && <Btn onClick={selectPage}>全选本页</Btn>}
       </div>
       <div className="nx-decisions">
         <div className="nx-actions">
@@ -440,88 +435,48 @@ export function NexusPanel(): React.ReactNode {
         </div>
       )}
 
+      {selected.size > 0 && (
+        <div className="nx-batch" role="region" aria-label="批量操作">
+          <span className="nx-batch-count">已选 {selected.size} 条</span>
+          <Btn kind="primary" onClick={batchConfirmActive}>确认</Btn>
+          {batchConfirm === 'archive'
+            ? <><Btn kind="danger" onClick={batchArchive}>确认归档 {selected.size} 条</Btn><Btn onClick={() => setBatchConfirm(null)}>取消</Btn></>
+            : <Btn kind="danger" onClick={() => setBatchConfirm('archive')}>归档</Btn>}
+          {batchConfirm === 'trash'
+            ? <><Btn kind="danger" onClick={batchTrash}>确认移入回收站 {selected.size} 条</Btn><Btn onClick={() => setBatchConfirm(null)}>取消</Btn></>
+            : <Btn onClick={() => setBatchConfirm('trash')}>移入回收站</Btn>}
+          <Btn onClick={clearSelection}>取消选择</Btn>
+        </div>
+      )}
+
       <div className="nx-list">
         {loading && items.length === 0 ? <div className="nx-empty">加载中…</div>
         : error !== null ? <div className="nx-empty">加载失败：{error}</div>
-        : items.length === 0 ? <div className="nx-empty">暂无记忆。会话中我会自动提炼并保存值得记住的信息。</div>
-        : items.map((item) => (
-            <div className="nx-row" key={item.id}>
-              <div className="nx-row-head">
-                <div className="nx-tags">
-                  <Tag text={SCOPE_NAME[item.scope] ?? item.scope} className="scope" />
-                  <span className="nx-tag-sep">|</span>
-                  <Tag text={SLOT_NAME[item.slot] ?? item.slot} className={`slot-${item.slot}`} />
-                  <span className="nx-tag-sep">|</span>
-                  <Tag text={STATUS_NAME[item.status] ?? item.status} className={`status-${item.status}`} />
-                  {item.pinned === true && <><span className="nx-tag-sep">|</span><Tag text="置顶" /></>}
-                </div>
-              </div>
-              {editingId === item.id
-                ? <div className="nx-edit-wrap">
-                    <Select ariaLabel="作用域" value={editScope} onChange={(v) => setEditScope(v)} options={[
-                      { value: 'project', label: '项目' },
-                      { value: 'user', label: '个人' },
-                    ]} />
-                    <textarea className="nx-edit" value={editText} onChange={(e) => setEditText(e.target.value)} rows={3} autoFocus />
-                  </div>
-                : <div className="nx-statement">{item.statement}</div>}
-              {item.truncated === true && editingId !== item.id && (
-                <div className="nx-hint">列表只显示前 400 字（全文 {item.statementLength ?? 0} 字）；点「编辑」会载入全文。</div>
-              )}
-              {item.status === 'needs-review' && item.conflictWith !== undefined && (
-                <div className="nx-hint">与记忆 {item.conflictWith} 冲突</div>
-              )}
-              {item.status === 'pending' && item.conflictWith !== undefined && (
-                <div className="nx-hint">疑似与记忆 {item.conflictWith} 重复（{item.reviewNote === 'suspected-duplicate' ? '近义' : '同类'}），可合并或保留</div>
-              )}
-              {item.status === 'superseded' && item.supersededBy !== undefined && (
-                <div className="nx-hint replaced">被记忆 {item.supersededBy} 取代</div>
-              )}
-              <div className="nx-meta">
-                <span>ID:{item.id}</span>
-                <span>权重:{item.weight} · 置信度:{Math.round((item.confidence ?? 0) * 100)}%</span>
-                <span>更新 {new Date(item.updatedAt).toLocaleString()}</span>
-              </div>
-              <div className="nx-actions">
-                {(item.status === 'pending' || item.status === 'needs-review') && <Btn kind="primary" onClick={() => confirmOne(item.id)}>确认</Btn>}
-                {item.status === 'pending' && item.conflictWith !== undefined && (
-                  <Btn onClick={() => { const keep = item.conflictWith; if (keep !== undefined) mergeInto(item.id, keep) }}>合并重复</Btn>
-                )}
-                {editingId === item.id
-                  ? <><Btn kind="primary" onClick={() => void saveEdit(item.id)}>保存</Btn><Btn onClick={cancelEdit}>取消</Btn></>
-                  : <Btn onClick={() => void startEdit(item)}>编辑</Btn>}
-                {item.status !== 'archived' && item.status !== 'superseded' && item.status !== 'rejected' && (
-                  confirmingId === item.id
-                    ? <><Btn kind="danger" onClick={() => void confirmArchive(item.id)}>确认归档</Btn><Btn onClick={cancelArchive}>取消</Btn></>
-                    : <Btn kind="danger" onClick={() => askArchive(item.id)}>归档</Btn>
-                )}
-                <Btn onClick={() => togglePin(item)}>{item.pinned === true ? '取消置顶' : '置顶'}</Btn>
-                {item.status === 'archived'
-                  ? (item.reviewNote === 'user-deleted'
-                      ? (purgeId === item.id
-                          ? <><Btn kind="danger" onClick={() => void confirmPurge(item.id)}>确认彻底清除</Btn><Btn onClick={() => setPurgeId(null)}>取消</Btn></>
-                          : <><Btn onClick={() => restoreOne(item.id)}>恢复</Btn><Btn kind="danger" onClick={() => setPurgeId(item.id)}>彻底清除</Btn></>)
-                      : <span className="nx-hint">系统归档（不可彻底清除）</span>)
-                  : null}
-                <Btn onClick={() => toggleNeighbors(item.id)}>{openIds.has(item.id) ? '收起' : '关系'}</Btn>
-                {deleteId === item.id
-                  ? <><Btn kind="danger" onClick={() => void confirmDelete(item.id)}>确认移入回收站</Btn><Btn onClick={cancelDelete}>取消</Btn></>
-                  : <Btn onClick={() => askDelete(item.id)}>移入回收站</Btn>}
-              </div>
-              {openIds.has(item.id) && (
-                <div className="nx-neighbors">
-                  {neighbors[item.id] === undefined || neighbors[item.id]?.loading === true
-                    ? <div className="nx-n-item">加载中…</div>
-                    : neighbors[item.id]?.error !== undefined
-                      ? <div className="nx-n-item">关系查询失败：{neighbors[item.id]?.error}</div>
-                      : (neighbors[item.id]?.list ?? []).length === 0
-                        ? <div className="nx-n-item">暂无关联记忆。</div>
-                        : (neighbors[item.id]?.list ?? []).map((n, i) => (
-                            <div className="nx-n-item" key={i}><span className="nx-n-edge">{n.edge ?? '相关'}</span>{n.atom?.statement ?? n.other ?? ''}</div>
-                          ))}
-                </div>
-              )}
+        : items.length === 0 ? (
+            <div className="nx-empty">
+              <div className="nx-empty-title">这里还没有记忆。</div>
+              <div className="nx-empty-hint">在会话里说「记住：……」，我会自动提炼；也可以点右上角「新增」手动写入。</div>
             </div>
+          )
+        : items.map((item) => (
+            <MemoryRow
+              key={item.id}
+              item={item}
+              selected={selected.has(item.id)}
+              onSelect={toggleSelect}
+              {...(neighbors[item.id] !== undefined ? { neighbors: neighbors[item.id] } : {})}
+              neighborsOpen={openIds.has(item.id)}
+              onToggleNeighbors={toggleNeighbors}
+              onLoadFull={loadFull}
+              onSave={saveEdit}
+              onConfirm={confirmOne}
+              onTogglePin={togglePin}
+              onArchive={archiveRow}
+              onRestore={restoreOne}
+              onDelete={deleteRow}
+              onPurge={purgeRow}
+              onMerge={mergeInto}
+            />
           ))}
         {items.length > 0 && items.length < total && (
           <div className="nx-more">
