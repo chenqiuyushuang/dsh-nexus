@@ -300,6 +300,10 @@ html.embedded .nx-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; paddin
 .nx-n-item { padding: 3px 0; color: var(--nx-text); }
 .nx-n-edge { color: var(--nx-text-tertiary); margin-right: 6px; }
 
+/* ---- B2 分页与计数 ---- */
+.nx-count { align-self: center; font-size: 12px; color: var(--nx-text-tertiary); margin-left: auto; font-variant-numeric: tabular-nums; }
+.nx-more { display: flex; justify-content: center; padding: 10px 0 4px; }
+
 /* ---- B4 注入真相条 ---- */
 .nx-inject { margin: 0 0 12px; border: 1px solid var(--nx-border); border-radius: var(--nx-radius);
   background: var(--nx-bg-card); box-shadow: var(--nx-shadow); overflow: hidden; }

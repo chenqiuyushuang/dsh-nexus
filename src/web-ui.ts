@@ -7,7 +7,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { NexusFacility } from './facility.ts'
-import type { CandidateAtom, MemoryKind, MemoryScope } from './atom.ts'
+import type { Atom, CandidateAtom, MemoryKind, MemoryScope } from './atom.ts'
 import { deriveSlot, normalizeStatement } from './atom.ts'
 import { deterministCues, hash16 } from './extraction.ts'
 import { summarizeCosts, shouldAutoDegrade } from './cost.ts'
@@ -15,6 +15,36 @@ import { neighborsOf } from './edges.ts'
 import { DEFAULT_EXTRACT_BUDGET } from './budget.ts'
 import { DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
 import { injectionTruth, defaultProjectRef, projectRefs } from './injection-truth.ts'
+
+/** 列表页单页上限（B2）：超过这个数量的库必须分页。 */
+const MEMORY_PAGE_MAX = 200;
+/** 列表里 statement 的预览长度；完整内容走 /nexus/api/memory/get。 */
+const MEMORY_STATEMENT_PREVIEW = 400;
+
+/** 列表项投影：只回面板要用的字段（去掉 cues/sources/fp/provenance 这些大字段）。 */
+function toMemoryListItem(atom: Atom): Record<string, unknown> {
+  const truncated = atom.statement.length > MEMORY_STATEMENT_PREVIEW;
+  return {
+    id: atom.id,
+    scope: atom.scope,
+    slot: atom.slot,
+    kind: atom.kind,
+    status: atom.status,
+    subject: atom.subject,
+    statement: truncated ? atom.statement.slice(0, MEMORY_STATEMENT_PREVIEW) : atom.statement,
+    statementLength: atom.statement.length,
+    truncated,
+    weight: atom.weight,
+    confidence: atom.confidence,
+    pinned: atom.pinned === true,
+    ...(atom.projectRef !== undefined ? { projectRef: atom.projectRef } : {}),
+    ...(atom.conflictWith !== undefined ? { conflictWith: atom.conflictWith } : {}),
+    ...(atom.supersededBy !== undefined ? { supersededBy: atom.supersededBy } : {}),
+    ...(atom.reviewNote !== undefined ? { reviewNote: atom.reviewNote } : {}),
+    createdAt: atom.createdAt,
+    updatedAt: atom.updatedAt,
+  };
+}
 
 declare interface NexusWebServer {
   register(route: { kind: "exact"; path: string; handler: (req: unknown, res: unknown) => void | Promise<void> }): () => void;
@@ -80,6 +110,7 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
       lastSummary: store.getState().lastSummary,
     });
   });
+  // B2：分页 + 只回面板需要的字段（此前返回全部原子 → 1000 条库首屏一次拉几十万字节）
   route("/nexus/api/memory", async (req, res) => {
     if (!guardRead(req, res)) return;
     const store = await facility.store();
@@ -88,16 +119,30 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     const status = url.searchParams.get("status") ?? "";
     const reviewNote = url.searchParams.get("reviewNote") ?? "";
     const query = (url.searchParams.get("q") ?? "").trim();
-    const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") ?? 100) || 100));
-    // 服务端筛选（专家实测：此前 status 参数不存在，前端在 limit 截断后过滤 → 库 >80 静默漏报）
-    const items = [...store.atomEntries()].map(([, a]) => a)
+    const limit = Math.min(MEMORY_PAGE_MAX, Math.max(1, Number(url.searchParams.get("limit") ?? 80) || 80));
+    const offset = Math.max(0, Number(url.searchParams.get("offset") ?? 0) || 0);
+    // 服务端筛选（专家实测：此前前端在 limit 截断后过滤 → 库 >80 静默漏报）
+    const matched = [...store.atomEntries()].map(([, a]) => a)
       .filter(a => scope === "" || a.scope === scope)
       .filter(a => status === "" || a.status === status)
       .filter(a => reviewNote === "" || a.reviewNote === reviewNote)
       .filter(a => query.length === 0 || (a.subject + a.statement).toLowerCase().includes(query.toLowerCase()))
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, limit);
-    sendJson(res, 200, items);
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    sendJson(res, 200, {
+      items: matched.slice(offset, offset + limit).map(toMemoryListItem),
+      total: matched.length,
+      offset,
+      limit,
+    });
+  });
+  // B2：编辑/缩短前取全文（列表里的 statement 只给前 400 字，避免"编辑一次删掉 2.8KB"）
+  route("/nexus/api/memory/get", async (req, res) => {
+    if (!guardRead(req, res)) return;
+    const url = new URL((req as { url?: string }).url ?? "/", "http://localhost");
+    const store = await facility.store();
+    const atom = store.getAtom(url.searchParams.get("id") ?? "");
+    if (atom === undefined) { sendJson(res, 404, { error: "not found" }); return; }
+    sendJson(res, 200, atom);
   });
   route("/nexus/api/decisions", async (req, res) => {
     if (!guardRead(req, res)) return;

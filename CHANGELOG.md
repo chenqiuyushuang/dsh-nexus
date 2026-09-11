@@ -12,6 +12,14 @@
 - `/nexus/api/memory/update` 支持 `projectRef`（指派或清除项目归属）
 - 测试：`injection-truth` 单元 5 例 + 路由级 2 例 + 面板渲染 2 例；全套 222 通过 + 5 xfail
 
+### B2 列表服务端化
+- `/nexus/api/memory` 返回 `{items,total,offset,limit}`：limit ≤200（默认 80）、支持 offset；筛选（q/scope/status/reviewNote）全部走服务端
+- 修复：面板此前取 80 条再本地过滤 → 库 >80 时「待确认」筛出 0 条、chips 与列表不一致
+- 列表只回面板需要的字段（去掉 cues/sources/fp/provenance）；statement 截 400 并给出 `statementLength/truncated`
+- 新增 `/nexus/api/memory/get?id=`：编辑与「缩短」前取全文，避免照预览保存时删掉长记忆的后半段（本机 29 条 >1KB）
+- 面板：工具条显示「显示 X / 共 Y 条」、列表底部「加载更多（还有 N 条）」、截断行提示全文长度
+- 测试：B2 路由 2 例（分页/上限/末页 · 投影/截断/全文/404）；全套 224 通过 + 5 xfail
+
 ### B5 反馈与撤销
 - 底部 toast：成功 5 秒内可撤销、失败带原因；彻底移除 window.alert / window.confirm；彻底清除改面板内两步确认且只对回收站开放
 - 撤销链修好：归档（连黑名单一起回滚）/ 移入回收站 / 置顶 都可完全撤销

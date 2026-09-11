@@ -5,7 +5,7 @@
  * （已进入 / 没进入，后者按原因分组），每行只给一个最相关的动作，3 步内可答。
  * 文案必须诚实：这里指的是「此刻新开一个会话会注入什么」，并写明同会话刷新规则。
  */
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Btn, Select, Tag } from './components.tsx'
 
@@ -53,7 +53,7 @@ function estimateLineBytes(entry: InjectionEntryView, statement: string): number
   return new TextEncoder().encode(line).length
 }
 
-export function InjectionBar({ truth, projects, project, onProject, onPin, onAssign, onScope, onSave, onConfirm, defaultOpen }: {
+export function InjectionBar({ truth, projects, project, onProject, onPin, onAssign, onScope, onSave, onLoad, onConfirm, defaultOpen }: {
   /** 初始展开（测试与深链用）。 */
   defaultOpen?: boolean
   truth?: InjectionTruthView
@@ -64,6 +64,8 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
   onAssign: (id: string, ref: string) => void
   onScope: (id: string, scope: string) => void
   onSave: (id: string, statement: string, scope: string) => void
+  /** 取全文（列表里的 statement 是预览；缩短前必须换成全文，否则一编辑就截断）。 */
+  onLoad?: (id: string) => Promise<string>
   onConfirm: (id: string) => void
 }): ReactNode {
   const [open, setOpen] = useState(defaultOpen === true)
@@ -74,7 +76,17 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
   const groups = REASON
     .map((meta) => ({ meta, rows: truth.dropped.filter((drop) => drop.reason === meta.key) }))
     .filter((group) => group.rows.length > 0)
-  const startEdit = (entry: InjectionEntryView): void => { setEditId(entry.id); setEditText(entry.statement) }
+  const editSeq = useRef(0)
+  const startEdit = (entry: InjectionEntryView): void => {
+    const seq = (editSeq.current += 1)
+    setEditId(entry.id)
+    setEditText(entry.statement)
+    if (onLoad === undefined) return
+    // 用户可能已经开始打字：只有仍停在同一条时才用全文覆盖预览
+    void onLoad(entry.id)
+      .then((full) => { if (editSeq.current === seq) setEditText(full) })
+      .catch(() => {})
+  }
   const saveEdit = (entry: InjectionEntryView): void => {
     const next = editText.trim()
     if (next === '') return

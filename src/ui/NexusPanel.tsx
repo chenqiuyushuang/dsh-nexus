@@ -32,7 +32,13 @@ interface MemoryItem {
   conflictWith?: string
   supersededBy?: string
   reviewNote?: string
+  /** B2：列表只回前 400 字，这里给出真实长度；完整内容走 /memory/get。 */
+  statementLength?: number
+  truncated?: boolean
+  projectRef?: string
 }
+/** B2：分页响应（服务端筛选 + 总数，前端不再"截断后过滤"）。 */
+interface MemoryPage { items: MemoryItem[]; total: number; offset: number; limit: number }
 interface Neighbor {
   edge?: string
   atom?: { statement: string }
@@ -68,10 +74,22 @@ async function j<T>(url: string, init?: RequestInit): Promise<T> {
 
 interface LoadParams { q: string; s: string; st: string; p: string }
 
+/** 单页条数（服务端上限 200）。 */
+const PAGE_SIZE = 80
+/** 列表查询 URL：q/scope/status 全部走服务端，避免"先截断再过滤"造成静默漏报。 */
+function memoryUrl(params: { q: string; s: string; st: string }, offset: number): string {
+  return '/nexus/api/memory?q=' + encodeURIComponent(params.q)
+    + '&scope=' + encodeURIComponent(params.s)
+    + '&status=' + encodeURIComponent(params.st)
+    + '&offset=' + String(offset) + '&limit=' + String(PAGE_SIZE)
+}
+
 /** 面板加载参数，记录为 state 以便事件与查询同步。 */
 export function NexusPanel(): React.ReactNode {
   const [state, setState] = useState<NexusState | null>(null)
   const [items, setItems] = useState<MemoryItem[]>([])
+  const [total, setTotal] = useState(0)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [query, setQuery] = useState('')
   // B4：注入真相要针对某个项目计算（项目记忆按归属隔离）
   const [project, setProject] = useState('')
@@ -102,13 +120,13 @@ export function NexusPanel(): React.ReactNode {
   const [decisions, setDecisions] = useState<Decisions | null>(null)
   const [showDecisions, setShowDecisions] = useState(false)
 
-  const load = useCallback(async ({ q, s, st: statusFilter, p }: LoadParams): Promise<void> => {
+  const load = useCallback(async ({ q, s, st, p }: LoadParams): Promise<void> => {
     setLoading(true)
     setError(null)
     try {
-      const [stateData, mem, thr, mods, dec] = await Promise.all([
+      const [stateData, page, thr, mods, dec] = await Promise.all([
         j<NexusState>('/nexus/api/state?project=' + encodeURIComponent(p)),
-        j<MemoryItem[]>(`/nexus/api/memory?q=${encodeURIComponent(q)}&scope=${encodeURIComponent(s)}&limit=80`),
+        j<MemoryPage>(memoryUrl({ q, s, st }, 0)),
         j<Thresholds>('/nexus/api/settings'),
         j<ModelRow[]>('/nexus/api/models'),
         j<Decisions>('/nexus/api/decisions'),
@@ -117,7 +135,8 @@ export function NexusPanel(): React.ReactNode {
       // 服务端会给出默认项目；只在本地还没选过时同步一次（避免来回覆盖）
       if (p === '' && stateData.project !== undefined && stateData.project !== '') setProject(stateData.project)
       setDecisions(dec)
-      setItems(statusFilter === '' ? mem : mem.filter((item) => item.status === statusFilter))
+      setItems(page.items)
+      setTotal(page.total)
       setSettings(thr)
       setAutoT(String(thr.autoAcceptThreshold))
       setModelT(String(thr.modelAutoThreshold))
@@ -145,6 +164,21 @@ export function NexusPanel(): React.ReactNode {
 
   const reload = (): void => { void load(current) }
 
+  // B2：翻页追加（服务端 offset/total），筛选变化时回到第一页
+  const loadMore = async (): Promise<void> => {
+    if (loadingMore || items.length >= total) return
+    setLoadingMore(true)
+    try {
+      const page = await j<MemoryPage>(memoryUrl({ q: query, s: scope, st: status }, items.length))
+      setItems((prev) => [...prev, ...page.items])
+      setTotal(page.total)
+    } catch (err) {
+      showToast('加载更多失败：' + (err instanceof Error ? err.message : String(err)), undefined, true)
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
   const showToast = useCallback((text: string, undo?: () => void, error = false): void => {
     setToast({ text, ...(undo !== undefined ? { undo } : {}), ...(error ? { error: true } : {}) })
     if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
@@ -161,7 +195,17 @@ export function NexusPanel(): React.ReactNode {
   }
   const confirmOne = (id: string): void => { void runAction('/nexus/api/memory/confirm', { ids: [id] }, '已确认 1 条') }
 
-  const startEdit = (item: MemoryItem): void => { setEditingId(item.id); setEditText(item.statement); setEditScope(item.scope) }
+  // B2：列表只回了前 400 字，编辑必须先取全文（否则保存会截掉后面的内容）
+  const startEdit = async (item: MemoryItem): Promise<void> => {
+    try {
+      const full = await j<{ statement: string }>('/nexus/api/memory/get?id=' + encodeURIComponent(item.id))
+      setEditText(full.statement)
+      setEditScope(item.scope)
+      setEditingId(item.id)
+    } catch (err) {
+      showToast('读取全文失败：' + (err instanceof Error ? err.message : String(err)), undefined, true)
+    }
+  }
   const saveEdit = async (id: string): Promise<void> => {
     const next = editText.trim()
     if (next === '') return
@@ -210,6 +254,8 @@ export function NexusPanel(): React.ReactNode {
     onAssign: (id: string, ref: string): void => { void runAction('/nexus/api/memory/update', { id, projectRef: ref }, '已指派到 ' + ref) },
     onScope: (id: string, scope: string): void => { void runAction('/nexus/api/memory/update', { id, scope }, '已改为用户级（所有项目可见）') },
     onSave: (id: string, statement: string, scope: string): void => { void runAction('/nexus/api/memory/update', { id, statement, scope }, '已更新') },
+    // 注入条里的 statement 是 200 字预览；「缩短」前必须取全文，避免一编辑就截断
+    onLoad: async (id: string): Promise<string> => (await j<{ statement: string }>('/nexus/api/memory/get?id=' + encodeURIComponent(id))).statement,
     onConfirm: (id: string): void => { confirmOne(id) },
   }
   // 彻底清除（仅回收站/归档行）：真删 + 清边，二次确认
@@ -346,6 +392,7 @@ export function NexusPanel(): React.ReactNode {
         ]} />
         <Btn onClick={reload}>刷新</Btn>
         <Btn kind="primary" onClick={startAdd}>新增</Btn>
+        <span className="nx-count">显示 {items.length} / 共 {total} 条</span>
       </div>
       <div className="nx-decisions">
         <div className="nx-actions">
@@ -418,6 +465,9 @@ export function NexusPanel(): React.ReactNode {
                     <textarea className="nx-edit" value={editText} onChange={(e) => setEditText(e.target.value)} rows={3} autoFocus />
                   </div>
                 : <div className="nx-statement">{item.statement}</div>}
+              {item.truncated === true && editingId !== item.id && (
+                <div className="nx-hint">列表只显示前 400 字（全文 {item.statementLength ?? 0} 字）；点「编辑」会载入全文。</div>
+              )}
               {item.status === 'needs-review' && item.conflictWith !== undefined && (
                 <div className="nx-hint">与记忆 {item.conflictWith} 冲突</div>
               )}
@@ -439,7 +489,7 @@ export function NexusPanel(): React.ReactNode {
                 )}
                 {editingId === item.id
                   ? <><Btn kind="primary" onClick={() => void saveEdit(item.id)}>保存</Btn><Btn onClick={cancelEdit}>取消</Btn></>
-                  : <Btn onClick={() => startEdit(item)}>编辑</Btn>}
+                  : <Btn onClick={() => void startEdit(item)}>编辑</Btn>}
                 {item.status !== 'archived' && item.status !== 'superseded' && item.status !== 'rejected' && (
                   confirmingId === item.id
                     ? <><Btn kind="danger" onClick={() => void confirmArchive(item.id)}>确认归档</Btn><Btn onClick={cancelArchive}>取消</Btn></>
@@ -473,6 +523,13 @@ export function NexusPanel(): React.ReactNode {
               )}
             </div>
           ))}
+        {items.length > 0 && items.length < total && (
+          <div className="nx-more">
+            <Btn disabled={loadingMore} onClick={() => void loadMore()}>
+              {loadingMore ? '加载中…' : '加载更多（还有 ' + String(total - items.length) + ' 条）'}
+            </Btn>
+          </div>
+        )}
       </div>
 
       <footer className="nx-footer">

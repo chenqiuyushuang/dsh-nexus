@@ -148,8 +148,9 @@ describe('面板操作：置顶 / 回收站 / 彻底清除', () => {
     await store.putAtom(mk('nex_active0000000001', 'active') as never)
     const pending = await call('/nexus/api/memory?status=pending', { host: '127.0.0.1:3080' })
     const body = JSON.parse(pending.body)
-    expect(body.length).toBe(1)
-    expect(body[0].status).toBe('pending')
+    expect(body.items).toHaveLength(1)
+    expect(body.total).toBe(1)
+    expect(body.items[0].status).toBe('pending')
   })
 
   it('面板开启 LLM 提炼时使用预算默认上限（不再硬编码 60000）', async () => {
@@ -235,3 +236,50 @@ describe('B4 注入真相（/state + 指派项目）', () => {
     expect(after.injection.counts['unknown-project']).toBe(0)
   })
 })
+describe('B2 分页与列表投影', () => {
+  const mk = (id: string, overrides: Record<string, unknown> = {}) => ({
+    id, fp: 'fp_' + id, kind: 'fact', slot: 'project', provenance: 'user-declared', scope: 'project',
+    subject: 's', statement: 'st' + id, cues: ['c'], weight: 1, pinned: false, injected: false,
+    status: 'active', confidence: 0.98, sources: [], createdAt: 1, updatedAt: 1, ...overrides,
+  })
+  const READ = { host: '127.0.0.1:3080' }
+
+  it('返回 items+total 并支持 offset；limit 上限 200、默认 80', async () => {
+    const { call, store } = boot()
+    for (let i = 0; i < 5; i += 1) {
+      await store.putAtom(mk('nex_p' + String(i).padStart(15, '0'), { updatedAt: 100 + i, statement: 'st' + String(i) }) as never)
+    }
+    const first = JSON.parse((await call('/nexus/api/memory?limit=2', READ)).body)
+    expect(first.total).toBe(5)
+    expect(first.items).toHaveLength(2)
+    expect(first.limit).toBe(2)
+    expect(first.offset).toBe(0)
+    const second = JSON.parse((await call('/nexus/api/memory?limit=2&offset=2', READ)).body)
+    expect(second.items).toHaveLength(2)
+    expect(second.items[0].id).not.toBe(first.items[0].id)
+    const capped = JSON.parse((await call('/nexus/api/memory?limit=9999', READ)).body)
+    expect(capped.limit).toBe(200)
+    const tail = JSON.parse((await call('/nexus/api/memory?limit=2&offset=4', READ)).body)
+    expect(tail.items).toHaveLength(1)
+    expect(tail.total).toBe(5)
+  })
+
+  it('列表只回必要字段：statement 截 400 并给出真实长度，全文走 /memory/get', async () => {
+    const { call, store } = boot()
+    await store.putAtom(mk('nex_long00000000001', { statement: 'A'.repeat(1000) }) as never)
+    const page = JSON.parse((await call('/nexus/api/memory', READ)).body)
+    const item = page.items[0]
+    expect(item.statement).toHaveLength(400)
+    expect(item.truncated).toBe(true)
+    expect(item.statementLength).toBe(1000)
+    expect(item.cues).toBeUndefined()
+    expect(item.fp).toBeUndefined()
+    expect(item.provenance).toBeUndefined()
+    // 编辑前取全文：拿到的必须是完整内容，否则保存会把后面 600 字删掉
+    const full = JSON.parse((await call('/nexus/api/memory/get?id=nex_long00000000001', READ)).body)
+    expect(full.statement).toHaveLength(1000)
+    const missing = await call('/nexus/api/memory/get?id=nex_none00000000001', READ)
+    expect(missing.status).toBe(404)
+  })
+})
+
