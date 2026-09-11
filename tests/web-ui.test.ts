@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import { installNexusWeb } from '../src/web-ui.ts'
 import { MemoryStore } from '../src/store.ts'
+import { renderIndexLine } from '../src/atom.ts'
 import type { KvLike, MemoryTables, NexusState } from '../src/store.ts'
 
 function kv<K extends string, V>(): KvLike<K, V> {
@@ -273,6 +274,8 @@ describe('B2 分页与列表投影', () => {
     expect(item.truncated).toBe(true)
     expect(item.statementLength).toBe(1000)
     expect(item.cues).toBeUndefined()
+    // 「记忆＝预算」：列表项要带上它进注入块占的字节，且与运行时 renderIndexLine 同源
+    expect(item.injectBytes).toBe(Buffer.byteLength(renderIndexLine(store.getAtom('nex_long00000000001' as never)!), 'utf8'))
     expect(item.fp).toBeUndefined()
     expect(item.provenance).toBeUndefined()
     // 编辑前取全文：拿到的必须是完整内容，否则保存会把后面 600 字删掉

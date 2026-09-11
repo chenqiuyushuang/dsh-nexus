@@ -98,13 +98,14 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
   const renderRow = (entry: InjectionEntryView & { reason?: string; detail?: string }, isShown: boolean): ReactNode => (
     <div className={'nx-inject-row' + (isShown ? ' in' : '')} key={(isShown ? 'in:' : 'out:') + entry.id}>
       <div className="nx-inject-main">
-        <div className="nx-inject-subject">{entry.subject}</div>
+        {/* 主语与正文重复时只显示一次（与注入行同一规则） */}
+        {!entry.statement.startsWith(entry.subject) && <div className="nx-inject-subject">{entry.subject}</div>}
         <div className="nx-inject-statement">{entry.statement}</div>
       </div>
       <div className="nx-inject-side">
         <Tag text={entry.scope === 'user' ? '跨项目' : entry.scope === 'project' ? '本项目' : '本会话'} className="scope" />
         {entry.pinned && <Tag text="置顶" />}
-        <span className="nx-inject-bytes">{entry.bytes > 0 ? entry.bytes + ' B' : '—'}</span>
+        <span className="nx-inject-bytes">{entry.bytes > 0 ? entry.bytes + ' B · ' + Math.round((entry.bytes / Math.max(1, truth.budgetBytes)) * 100) + '%' : '—'}</span>
       </div>
       {!isShown && editId === entry.id && (
         <div className="nx-inject-edit">
@@ -161,8 +162,14 @@ export function InjectionBar({ truth, projects, project, onProject, onPin, onAss
             } />
           </div>
           <div className="nx-inject-group">
-            <div className="nx-inject-group-head"><b>已进入（{truth.shown.length} 条）</b><span className="nx-dim">{truth.bytes} B / {truth.budgetBytes} B</span></div>
-            {truth.shown.length === 0 ? <div className="nx-empty">没有记忆进入上下文。</div> : truth.shown.map((entry) => renderRow(entry, true))}
+            <div className="nx-inject-group-head">
+              <b>已进入（{truth.shown.length} 条）</b>
+              <span className="nx-dim">
+                {truth.bytes} B / {truth.budgetBytes} B（{Math.round((truth.bytes / Math.max(1, truth.budgetBytes)) * 100)}%）
+                · 剩余 {Math.max(0, truth.budgetBytes - truth.bytes)} B
+              </span>
+            </div>
+            {truth.shown.length === 0 ? <div className="nx-empty">没有记忆进入上下文。</div> : [...truth.shown].sort((a, b) => b.bytes - a.bytes).map((entry) => renderRow(entry, true))}
           </div>
           {groups.map((group) => (
             <div className="nx-inject-group" key={group.meta.key}>

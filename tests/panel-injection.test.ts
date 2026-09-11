@@ -50,6 +50,12 @@ describe('B4 注入条渲染', () => {
   it('展开后按原因分组，每组给一键动作（第 2 步就能看到怎么修）', () => {
     const html = render(true)
     expect(html).toContain('已进入（1 条）')
+    // 预算去向可见：已用 / 预算 / 占比 / 剩余
+    expect(html).toContain('410 B / 1024 B（40%）')
+    // 主语与正文重复只显示一次
+    expect((html.match(/用户的名字是 Daniel/g) ?? []).length).toBe(1)
+    expect(html).toContain('剩余 614 B')
+    expect(html).toContain('120 B · 12%')
     expect(html).toContain('归属未知（1）')
     expect(html).toContain('单条超预算（1）')
     expect(html).toContain('按隔离规则永不注入')

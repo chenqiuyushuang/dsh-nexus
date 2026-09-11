@@ -8,6 +8,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { NexusFacility } from './facility.ts'
 import type { Atom, CandidateAtom, MemoryKind, MemoryScope } from './atom.ts'
+import { renderIndexLine } from './atom.ts'
 import { deriveSlot, normalizeStatement } from './atom.ts'
 import { deterministCues, hash16 } from './extraction.ts'
 import { summarizeCosts, shouldAutoDegrade } from './cost.ts'
@@ -38,6 +39,8 @@ function toMemoryListItem(atom: Atom): Record<string, unknown> {
     weight: atom.weight,
     confidence: atom.confidence,
     pinned: atom.pinned === true,
+    /** 这条记忆进入注入块要占的字节（与运行时 renderIndexLine 同源）。 */
+    injectBytes: Buffer.byteLength(renderIndexLine(atom), 'utf8'),
     ...(atom.projectRef !== undefined ? { projectRef: atom.projectRef } : {}),
     ...(atom.conflictWith !== undefined ? { conflictWith: atom.conflictWith } : {}),
     ...(atom.supersededBy !== undefined ? { supersededBy: atom.supersededBy } : {}),

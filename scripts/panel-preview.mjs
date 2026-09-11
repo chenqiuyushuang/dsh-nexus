@@ -65,6 +65,10 @@ try {
   await send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] })
   await send('Page.navigate', { url: 'http://127.0.0.1:3080/harness' })
   await new Promise((r) => setTimeout(r, 5000))
+  if (process.argv.includes('--expand-inject')) {
+    await send('Runtime.evaluate', { expression: `(() => { const doc = document.getElementById('f').contentDocument; const bar = doc.querySelector('.nx-inject-bar'); if (bar) bar.click(); return !!bar })()` })
+    await new Promise((r) => setTimeout(r, 600))
+  }
   if (process.argv.includes('--open-settings')) {
     await send('Runtime.evaluate', { expression: `(() => { const frame = document.getElementById('f'); const doc = frame.contentDocument; const btn = [...doc.querySelectorAll('button')].find((b) => (b.textContent || '').trim() === '设置'); if (btn) btn.click(); return !!btn })()` })
     await new Promise((r) => setTimeout(r, 800))

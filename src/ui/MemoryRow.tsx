@@ -26,6 +26,8 @@ export interface MemoryRowItem {
   reviewNote?: string
   statementLength?: number
   truncated?: boolean
+  /** 进注入块占的字节（服务端算好，与运行时同源）。 */
+  injectBytes?: number
 }
 export interface NeighborView { edge?: string; atom?: { statement: string }; other?: string }
 export interface NeighborState { loading: boolean; list: NeighborView[] | null; error?: string }
@@ -196,6 +198,7 @@ export function MemoryRow({
           <div className="nx-meta">
             <span>ID:{item.id}</span>
             <span>权重:{item.weight} · 置信度:{Math.round((item.confidence ?? 0) * 100)}%</span>
+            {item.injectBytes !== undefined && <span>占注入 {item.injectBytes} B</span>}
             <span>更新 {new Date(item.updatedAt).toLocaleString()}</span>
           </div>
           <div className="nx-actions">

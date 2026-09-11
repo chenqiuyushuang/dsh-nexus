@@ -44,6 +44,8 @@ interface MemoryItem {
   conflictWith?: string
   supersededBy?: string
   reviewNote?: string
+  /** 进注入块要占的字节。 */
+  injectBytes?: number
   /** B2：列表只回前 400 字，这里给出真实长度；完整内容走 /memory/get。 */
   statementLength?: number
   truncated?: boolean

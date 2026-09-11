@@ -177,11 +177,20 @@ export function flattenIndexText(text: string): string {
     .trim()
 }
 
-/** One index line (the frozen ## 记忆 block); pinned memories get a star. */
+/**
+ * One index line (the frozen ## 记忆 block); pinned memories get a star.
+ *
+ * 主语与正文重复时只打印一次：抽取器把 subject 设为 statement 的前 24 字，
+ * 于是短记忆会渲染成「用户的名字是 Daniel（中文对话）。：用户的名字是 Daniel（中文对话）。」——
+ * 用户在自己的系统提示里每天看到这种重复，而且白占注入预算的字节。
+ */
 export function renderIndexLine(atom: Atom): string {
   const prefix = atom.pinned ? '★ ' : ''
   const weightSuffix = atom.weight >= 3 ? '（' + atom.weight + '）' : ''
-  return prefix + '- [' + atom.slot + '] ' + flattenIndexText(atom.subject) + '：' + flattenIndexText(atom.statement) + weightSuffix
+  const subject = flattenIndexText(atom.subject)
+  const statement = flattenIndexText(atom.statement)
+  const body = subject !== '' && statement.startsWith(subject) ? statement : subject + '：' + statement
+  return prefix + '- [' + atom.slot + '] ' + body + weightSuffix
 }
 
 /** Reject log key: rjt_<16 hex> (string at the type level; schema enforces the shape). */
