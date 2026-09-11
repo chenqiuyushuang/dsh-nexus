@@ -88,6 +88,19 @@ npm run build    # esbuild → lib/index.js（宿主依赖外部化）
 
 > 已知缺口：`lib/types/*.d.ts` 声明产物待与 DSH 一致的 tsdown 管线接入（v0.2 发布前置项）。
 
+### ⚠️ clone 后必做一步：启用 pre-commit 守卫
+
+```bash
+git config core.hooksPath .githooks
+```
+
+**为什么**：`.gitignore` 只是约定，拦不住 `git add -f`。本项目曾因此把本地测试环境
+（`_dsh_test/`，含真实会话转录与记忆库）提交进了公开仓库，最终只能删库重建来补救。
+`.githooks/pre-commit` 对本地测试环境、包管理器缓存、凭据（`.env`/`*.pem`/`*.key`）
+和会话数据（`*.zstd`/`*.jsonl`）做**硬拦截**。确属误报时用 `git commit --no-verify` 显式绕过。
+
+> `core.hooksPath` 是本地配置、不随 git 传播，所以每个 clone 都要设一次。
+
 ## 命名与市场识别
 
 - npm：`@chenqiuyushuang/dsh-nexus`（插件名 `'nexus'`，域 `nexus_memory`，事件 `nexus/memory/*`）
