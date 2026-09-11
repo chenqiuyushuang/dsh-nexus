@@ -1,0 +1,96 @@
+/* =====================================================================
+   样例 HTML 的调色板（逐值抄录）—— 用户问"你认为和 HTML 一样吗"后的对照档。
+   样例自带暗/亮两套（:root 与 body.light），这里同样给两套，映射到面板的 --nx-* 变量：
+     卡片  #252528 / #F8F9FA        边框 #3A3A3E / #E9ECEF
+     正文  #FFFFFF / #212529        次级 #A0A0A5 / #495057      弱化 #6B6B70 / #868E96
+     强调  #3B82F6 / #2563EB        成功 #10B981 / #059669      警告 #F59E0B / #D97706   危险 #EF4444 / #DC2626
+   圆角也照样例：卡片 10px、条目内元素 6px。
+   ===================================================================== */
+
+/* 亮色（样例 body.light）作为默认值 */
+.nx-app.nx-sample {
+  --nx-bg-base: #E9ECEF;
+  --nx-bg-card: #F8F9FA;
+  --nx-bg-card-elevated: #F8F9FA;
+  --nx-bg-subtle: #F1F3F5;
+  --nx-bg-hover: #F1F3F5;
+  --nx-bg-active: #E9ECEF;
+  --nx-bg-accent: rgba(59, 130, 246, 0.12);
+  --nx-border: #E9ECEF;
+  --nx-border-card: #E9ECEF;
+  --nx-border-strong: #DEE2E6;
+  --nx-text: #212529;
+  --nx-text-secondary: #495057;
+  --nx-text-tertiary: #868E96;
+  --nx-text-muted: #868E96;
+  --nx-accent: #2563EB;
+  --nx-accent-text: #2563EB;
+  --nx-primary: #2563EB;
+  --nx-primary-text: #FFFFFF;
+  --nx-success: #059669;
+  --nx-success-text: #059669;
+  --nx-warn: #D97706;
+  --nx-warn-text: #D97706;
+  --nx-warn-soft: rgba(245, 158, 11, 0.1);
+  --nx-error: #DC2626;
+  --nx-error-text: #DC2626;
+  --nx-error-soft: rgba(239, 68, 68, 0.08);
+  --nx-sbar-user: #059669;
+  --nx-sbar-project: #D97706;
+  --nx-sbar-episode: #2563EB;
+  --nx-conf-high: #059669;
+  --nx-conf-mid: #D97706;
+  --nx-conf-low: #DC2626;
+  --nx-tag-bg: rgba(0, 0, 0, 0.05);
+  --nx-radius: 10px;
+  --nx-radius-sm: 6px;
+}
+
+/* 暗色（样例 :root） */
+body[data-ds-dark-theme] .nx-app.nx-sample {
+  --nx-bg-base: #0A0A0A;
+  --nx-bg-card: #252528;
+  --nx-bg-card-elevated: #252528;
+  --nx-bg-subtle: #1E1E20;
+  --nx-bg-hover: #2A2A2E;
+  --nx-bg-active: #333338;
+  --nx-bg-accent: rgba(59, 130, 246, 0.15);
+  --nx-border: #3A3A3E;
+  --nx-border-card: #3A3A3E;
+  --nx-border-strong: #4A4A50;
+  --nx-text: #FFFFFF;
+  --nx-text-secondary: #A0A0A5;
+  --nx-text-tertiary: #6B6B70;
+  --nx-text-muted: #6B6B70;
+  --nx-accent: #3B82F6;
+  --nx-accent-text: #3B82F6;
+  --nx-primary: #3B82F6;
+  --nx-primary-text: #FFFFFF;
+  --nx-success: #10B981;
+  --nx-success-text: #10B981;
+  --nx-warn: #F59E0B;
+  --nx-warn-text: #F59E0B;
+  --nx-error: #EF4444;
+  --nx-error-text: #EF4444;
+  --nx-sbar-user: #10B981;
+  --nx-sbar-project: #F59E0B;
+  --nx-sbar-episode: #3B82F6;
+  --nx-conf-high: #10B981;
+  --nx-conf-mid: #F59E0B;
+  --nx-conf-low: #EF4444;
+  --nx-tag-bg: rgba(255, 255, 255, 0.06);
+}
+
+/* 样例的按钮与标签形态：
+   .btn-primary 蓝底白字；.btn-add 白底黑字（主色反相）；.tag 无描边药丸 */
+.nx-app.nx-sample .nx-btn.primary { background: var(--nx-accent); border-color: var(--nx-accent); color: #FFFFFF; }
+.nx-app.nx-sample .nx-tag { border-color: transparent; background: var(--nx-tag-bg); color: var(--nx-text-secondary); }
+.nx-app.nx-sample .nx-tag.status-active { background: rgba(16, 185, 129, 0.1); color: var(--nx-success); }
+.nx-app.nx-sample .nx-tag.status-pending { background: rgba(245, 158, 11, 0.1); color: var(--nx-warn); }
+.nx-app.nx-sample .nx-tag.status-needs-review { background: rgba(239, 68, 68, 0.1); color: var(--nx-error); }
+.nx-app.nx-sample .nx-tag.status-archived, .nx-app.nx-sample .nx-tag.status-superseded { background: var(--nx-tag-bg); color: var(--nx-text-muted); }
+.nx-app.nx-sample .nx-progress-badge.warn { background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.3); color: var(--nx-warn); }
+.nx-app.nx-sample .nx-progress-track { background: var(--nx-border); }
+.nx-app.nx-sample .nx-status-card.on { background: rgba(59, 130, 246, 0.15); border-color: var(--nx-accent); }
+/* 样例的条目悬停是极浅的叠加，不是换底色 */
+.nx-app.nx-sample .nx-row:hover { background: var(--nx-bg-hover); }

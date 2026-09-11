@@ -484,7 +484,7 @@ export function NexusPanel(): React.ReactNode {
 
   return (
     // 独立页（非嵌入）本来就是全宽 —— 给它参考稿的绝对尺寸档，缩进页保持紧凑档
-    <div className={'nx-app' + (embedded ? '' : ' reference-scale')}>
+    <div className={'nx-app nx-sample' + (embedded ? '' : ' reference-scale')}>
       {state?.noise !== undefined && state.noise.count > 0 && (
         <div className="nx-banner noise" role="status">
           <span>检测到 <b>{state.noise.count}</b> 条疑似无效记忆（子代理回执或提示词被写成了记忆，会挤占 1KB 注入预算）。</span>

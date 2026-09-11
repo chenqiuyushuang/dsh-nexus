@@ -726,7 +726,9 @@ html.embedded .nx-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; oversc
 /* ---- 参考稿绝对尺寸（418 窄栏下的"一模一样"档） ---- */
 /* 样例 HTML 的原始数值：卡片 16px 内边距、条目 14px、搜索 8/12、状态卡两行大数字、色条 4px 宽。
    418px 窄栏下这些比例会明显吃掉列表高度 —— 是否采用由用户定（0.7 档）。 */
-.nx-app.reference-scale { padding: 16px; }
+/* 数值取自样例实测：content padding 24px / 区块间距 20px / 条目 padding 14px 16px / 标题 13px 1.4 */
+.nx-app.reference-scale { padding: 24px; }
+.nx-app.reference-scale > * + * { margin-top: 20px; }
 /* 半档：保留紧凑的卡片与状态卡，只把条目做成参考稿的宽松比例（14px 内边距 / 13px 标题）
    —— 用户可能想要的就是"列表看起来像样例"这一件事 */
 .nx-app.row-scale .nx-row-head { padding: 14px; gap: 12px; }
@@ -736,19 +738,19 @@ html.embedded .nx-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; oversc
 .nx-app.row-scale .nx-sbar { width: 4px; height: 20px; }
 .nx-app.row-scale .nx-tag { font-size: 11px; padding: 2px 8px; }
 .nx-app.row-scale .nx-listcard-head { padding: 10px 14px; font-size: 12px; }
-.nx-app.reference-scale .nx-progress { padding: 16px; margin-bottom: 12px; }
+.nx-app.reference-scale .nx-progress { padding: 16px; margin-bottom: 0; }
 .nx-app.reference-scale .nx-progress-head { font-size: 13px; margin-bottom: 10px; }
 .nx-app.reference-scale .nx-progress-track { height: 6px; margin-bottom: 8px; }
 .nx-app.reference-scale .nx-progress-legend { gap: 0 16px; justify-content: space-between; font-size: 12px; }
 .nx-app.reference-scale .nx-status-card { flex-direction: column; gap: 4px; padding: 12px 6px; }
 .nx-app.reference-scale .nx-status-card-value { font-size: 18px; }
-.nx-app.reference-scale .nx-status-cards { gap: 8px; margin-bottom: 12px; }
-.nx-app.reference-scale .nx-toolbar { gap: 8px; margin-bottom: 12px; }
+.nx-app.reference-scale .nx-status-cards { gap: 12px; margin-bottom: 0; }
+.nx-app.reference-scale .nx-toolbar { gap: 12px; margin-bottom: 0; }
 .nx-app.reference-scale .nx-search { padding: 8px 12px; font-size: 13px; }
-.nx-app.reference-scale .nx-listcard-head { padding: 10px 14px; font-size: 12px; }
-.nx-app.reference-scale .nx-row-head { padding: 14px; gap: 12px; }
-.nx-app.reference-scale .nx-row-title { font-size: 13px; line-height: 1.45; }
-.nx-app.reference-scale .nx-row-sub { font-size: 11.5px; gap: 0 12px; }
+.nx-app.reference-scale .nx-listcard-head { padding: 10px 16px; font-size: 12px; }
+.nx-app.reference-scale .nx-row-head { padding: 14px 16px; gap: 12px; }
+.nx-app.reference-scale .nx-row-title { font-size: 13px; line-height: 1.4; }
+.nx-app.reference-scale .nx-row-sub { font-size: 11px; gap: 0 12px; }
 .nx-app.reference-scale .nx-tag { font-size: 11px; padding: 2px 8px; }
 .nx-app.reference-scale .nx-check { width: 16px; height: 16px; }
 .nx-app.reference-scale .nx-sbar { width: 4px; height: 20px; }
