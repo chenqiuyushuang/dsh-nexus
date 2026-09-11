@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Chip, Btn, Select } from './components.tsx'
 import { MemoryRow } from './MemoryRow.tsx'
 import type { MemoryRowItem } from './MemoryRow.tsx'
+import { isPlainSlash, shouldHandleSlashKey } from './keyboard.ts'
 import { InjectionBar } from './InjectionBar.tsx'
 import type { InjectionTruthView, ProjectRefView } from './InjectionBar.tsx'
 
@@ -100,6 +101,7 @@ export function NexusPanel(): React.ReactNode {
   // B5 反馈层：底部 toast（成功带 5 秒撤销；失败带原因），取代 window.alert/confirm
   const [toast, setToast] = useState<{ text: string; error?: boolean; undo?: () => void } | null>(null)
   const toastTimer = useRef<number | null>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const [adding, setAdding] = useState(false)
   const [addText, setAddText] = useState('')
   const [addScope, setAddScope] = useState('user')
@@ -155,6 +157,18 @@ export function NexusPanel(): React.ReactNode {
   }, [load])
 
   const reload = (): void => { void load(current) }
+
+  // B6：按「/」聚焦搜索（在输入框里打字时不抢键）
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (!isPlainSlash(event)) return
+      if (!shouldHandleSlashKey(event.target as { tagName?: string; isContentEditable?: boolean } | null)) return
+      event.preventDefault()
+      searchRef.current?.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [])
 
   // B2：翻页追加（服务端 offset/total），筛选变化时回到第一页
   const loadMore = async (): Promise<void> => {
@@ -369,7 +383,15 @@ export function NexusPanel(): React.ReactNode {
       )}
 
       <div className="nx-toolbar">
-        <input className="nx-search" placeholder="搜索记忆内容…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input
+          ref={searchRef}
+          type="search"
+          className="nx-search"
+          aria-label="搜索记忆（按 / 聚焦）"
+          placeholder="搜索记忆内容…（按 / 聚焦）"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
         <Select ariaLabel="作用域" value={scope} onChange={(v) => setScope(v)} options={[
           { value: '', label: '全部作用域' },
           { value: 'user', label: '用户' },
@@ -386,7 +408,7 @@ export function NexusPanel(): React.ReactNode {
         ]} />
         <Btn onClick={reload}>刷新</Btn>
         <Btn kind="primary" onClick={startAdd}>新增</Btn>
-        <span className="nx-count">显示 {items.length} / 共 {total} 条</span>
+        <span className="nx-count" role="status" aria-live="polite">显示 {items.length} / 共 {total} 条</span>
         {items.length > 0 && <Btn onClick={selectPage}>全选本页</Btn>}
       </div>
       <div className="nx-decisions">
@@ -449,7 +471,7 @@ export function NexusPanel(): React.ReactNode {
         </div>
       )}
 
-      <div className="nx-list">
+      <div className="nx-list" role="list">
         {loading && items.length === 0 ? <div className="nx-empty">加载中…</div>
         : error !== null ? <div className="nx-empty">加载失败：{error}</div>
         : items.length === 0 ? (

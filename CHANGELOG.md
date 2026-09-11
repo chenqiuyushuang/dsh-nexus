@@ -12,6 +12,13 @@
 - `/nexus/api/memory/update` 支持 `projectRef`（指派或清除项目归属）
 - 测试：`injection-truth` 单元 5 例 + 路由级 2 例 + 面板渲染 2 例；全套 222 通过 + 5 xfail
 
+### B6 可访问性
+- 键盘：`/` 聚焦搜索（输入框内不抢键）；「⋯」菜单打开即聚焦首项、↑↓ 环绕、Home/End、Esc 关闭并把焦点还给按钮；下拉筛选同样支持方向键/Esc/回焦
+- 语义：列表 `role="list"` / 行 `role="listitem"`；结果计数为 `role="status" aria-live="polite"`（toast 已是 polite 播报）
+- 对比度：亮色下三档文字全部 ≥4.5:1（原 secondary 5.80 / tertiary 3.71 / muted 2.73），warn-text → amber-700、error-text → red-700，新增 `--nx-accent-text`（原 accent 白底 4.23）；暗色 warn-text → amber-400、error-text → red-300
+- `prefers-reduced-motion: reduce` 下关闭过渡与动画
+- 测试：对比度算术 30 例（解析 theme.css 的 var() 链，亮暗各 15 组）+ 键盘纯逻辑 4 例 + jsdom 焦点交互 4 例 + 可访问名审计 2 例；devDependency 新增 jsdom（仅测试用）
+- 全套 268 通过 + 5 xfail
 ### B3 列表重做（密度）
 - 行拆成 `src/ui/MemoryRow.tsx`：折叠态 = **单行**（勾选框 + 作用域色条 + 正文省略号 + 状态字 + ⋯，约 38px，行距 6px → 一屏约 10 条）
 - 展开后才显示：标签行、完整正文、元信息、冲突与疑似重复提示；键盘 Enter/Space 也可展开收起

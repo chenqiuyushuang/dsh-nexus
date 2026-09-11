@@ -5,9 +5,10 @@
  * 为什么要拆出来：面板原来的行同时塞 7 个按钮 + 元信息 + 提示，3000 字的记忆直接顶满一屏。
  * 拆成组件后折叠/展开/菜单/二次确认都能被渲染测试覆盖（见 tests/panel-list.test.ts）。
  */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Btn, Select, Tag } from './components.tsx'
+import { nextMenuIndex } from './keyboard.ts'
 
 export interface MemoryRowItem {
   id: string
@@ -73,6 +74,13 @@ export function MemoryRow({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [confirmPurge, setConfirmPurge] = useState(false)
   const editSeq = useRef(0)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const moreRef = useRef<HTMLButtonElement>(null)
+  // 打开菜单即聚焦第一项；Esc 关闭后焦点回到「⋯」（键盘用户不会掉焦点）
+  useEffect(() => {
+    if (!menuOpen) return
+    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus()
+  }, [menuOpen])
   // 折叠态不显示标签行（那是展开后的信息）；高频的「确认」留在行内
   const showTags = expanded || editing
   const canConfirm = item.status === 'pending' || item.status === 'needs-review'
@@ -91,12 +99,19 @@ export function MemoryRow({
     } catch { /* 取全文失败就先用预览，保存仍走服务端 */ }
   }
   const closeMenu = (): void => { setMenuOpen(false); setConfirmArchive(false); setConfirmDelete(false); setConfirmPurge(false) }
+  const onMenuKeyDown = (event: { key: string; preventDefault: () => void }): void => {
+    if (event.key === 'Escape') { event.preventDefault(); closeMenu(); moreRef.current?.focus(); return }
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])
+    const index = items.indexOf(document.activeElement as HTMLButtonElement)
+    const next = nextMenuIndex(index, event.key, items.length)
+    if (next >= 0) { event.preventDefault(); items[next]?.focus() }
+  }
   const onLineKey = (event: { key: string; preventDefault: () => void }, next: boolean): void => {
     if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setExpanded(next) }
   }
 
   return (
-    <div className={'nx-row' + (selected ? ' selected' : '') + (expanded ? ' open' : '')}>
+    <div className={'nx-row' + (selected ? ' selected' : '') + (expanded ? ' open' : '')} role="listitem">
       <div className="nx-row-head">
         <input
           type="checkbox"
@@ -131,6 +146,7 @@ export function MemoryRow({
         {canConfirm && <Btn kind="primary" onClick={() => onConfirm(item.id)}>确认</Btn>}
         <button
           type="button"
+          ref={moreRef}
           className="nx-more"
           aria-label="更多操作"
           aria-expanded={menuOpen}
@@ -187,7 +203,7 @@ export function MemoryRow({
       )}
 
       {menuOpen && (
-        <div className="nx-menu" role="menu">
+        <div className="nx-menu" role="menu" ref={menuRef} onKeyDown={onMenuKeyDown}>
           {!editing && <button type="button" role="menuitem" className="nx-menu-item" onClick={() => void startEdit()}>编辑</button>}
           <button type="button" role="menuitem" className="nx-menu-item" onClick={() => { onTogglePin(item); closeMenu() }}>
             {item.pinned === true ? '取消置顶' : '置顶'}</button>
