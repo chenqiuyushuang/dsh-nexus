@@ -35,6 +35,13 @@ export const nexusStateSchema = zod.object({
     pending: zod.number().int().nonnegative(),
     skippedWindows: zod.number().int().nonnegative(),
   }).optional(),
+  /** 价值门影子计数（只观测、不拦截）：判定 accept/review/reject 各多少条。 */
+  valueGateShadow: zod.object({
+    accept: zod.number().int().nonnegative(),
+    review: zod.number().int().nonnegative(),
+    reject: zod.number().int().nonnegative(),
+    updatedAt: zod.number().int().nonnegative(),
+  }).optional(),
   thresholds: zod.object({
     autoAcceptThreshold: zod.number().min(0).max(1).optional(),
     modelAutoThreshold: zod.number().min(0).max(1).optional(),

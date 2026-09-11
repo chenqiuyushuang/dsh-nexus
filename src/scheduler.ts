@@ -23,6 +23,7 @@ import type { CapturedTurnEvent } from './processors.ts'
 import { buildIndex, DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
 import { evaluateHardReject, extractFromStateEvent, extractFromToolFailure, extractFromTrigger, TOOL_FAILURE_RE } from './extraction.ts'
 import { isSystemNotificationText } from './noise.ts'
+import { assessValue } from './value-gate.ts'
 import { recallId, rejectId } from './atom.ts'
 import { hash16 } from './extraction.ts'
 
@@ -198,6 +199,16 @@ export function installScheduler(ctx: Context, facility: NexusFacility, config: 
             } else {
               const savedAtom = await facility.saveAtom(candidate, { sessionId: String(session.id), projectRef: projectRefOf(session) })
               bumpStat(String(session.id), savedAtom.status === 'pending' ? 'pending' : 'saved')
+              // 价值门影子模式：只记判定不改行为（先看回放证据，再决定是否拦截）
+              try {
+                const gate = assessValue({ statement: candidate.statement, subject: candidate.subject, provenance: candidate.provenance, scope: candidate.scope, kind: candidate.kind })
+                const store = await facility.store()
+                const state = store.getState()
+                const shadow = state.valueGateShadow ?? { accept: 0, review: 0, reject: 0, updatedAt: 0 }
+                await store.setState({ ...state, valueGateShadow: { ...shadow, [gate.verdict]: shadow[gate.verdict] + 1, updatedAt: Date.now() } })
+              } catch (error) {
+                console.warn('nexus: value-gate shadow failed (fail-open)', error)
+              }
             }
           }
         }

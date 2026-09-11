@@ -23,6 +23,8 @@ interface NexusState {
   byScope?: ScopeCounts
   /** P0：子代理噪音（子代理提示词被写入的记忆）。 */
   noise?: { count: number; ids: string[] }
+  /** 价值门影子计数（只观测，不拦截）。 */
+  valueGateShadow?: { accept: number; review: number; reject: number; updatedAt: number }
   /** B4：默认查看的项目 + 可选项目清单 + 注入真相。 */
   project?: string
   projects?: ProjectRefView[]
@@ -453,6 +455,12 @@ export function NexusPanel(): React.ReactNode {
         {items.length > 0 && <span className="nx-tool-more"><Btn onClick={selectPage}>全选本页</Btn></span>}
       </div>
       <div className="nx-decisions">
+        {showDecisions && state?.valueGateShadow !== undefined && (
+          <div className="nx-hint">
+            价值门（影子期，只记录不拦截）：接受 {state.valueGateShadow.accept} · 待议 {state.valueGateShadow.review} · 低价值 {state.valueGateShadow.reject}
+            —— 影子期用来验证判别准不准，攒够样本再决定是否真的拦。
+          </div>
+        )}
         {showDecisions && (
           <div className="nx-row">
             {decisions?.lastSummary !== undefined && (

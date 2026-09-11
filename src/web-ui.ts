@@ -112,6 +112,7 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
       cost: summarizeCosts(store),
       degraded: shouldAutoDegrade(store, 7),
       lastSummary: store.getState().lastSummary,
+      valueGateShadow: store.getState().valueGateShadow,
     });
   });
   // B2：分页 + 只回面板需要的字段（此前返回全部原子 → 1000 条库首屏一次拉几十万字节）
