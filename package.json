@@ -1,0 +1,93 @@
+{
+  "name": "@chenqiuyushuang/dsh-nexus",
+  "description": "Nexus — a zero-config, cost-protected memory layer for DeepSeek Harness",
+  "version": "0.3.0-alpha.1",
+  "keywords": [
+    "dsh-plugin",
+    "dsh",
+    "memory",
+    "deepseek-harness"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/nexus-ui.js",
+    "lib/nexus.html",
+    "cordis.patch.yml",
+    "web/nexus.html"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chenqiuyushuang/dsh-nexus.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.client.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "bench": "vitest run bench",
+    "build": "node scripts/build.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "3.18.2",
+    "zod": "^4.5.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-agent": ">=0.0.1-rc.1 <0.2.0",
+    "@deepseek-ai/dsh-llm": ">=0.0.1-rc.1 <0.2.0",
+    "@deepseek-ai/dsh-session": ">=0.0.1-rc.1 <0.2.0",
+    "@deepseek-ai/dsh-session-projection": ">=0.0.1-rc.1 <0.2.0",
+    "@deepseek-ai/dsh-storage-domain": ">=0.0.1-rc.1 <0.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-agent": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-commands": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-llm": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-scope": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-session": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-session-projection": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-storage": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-storage-domain": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-timeout": "0.1.5-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.5-rc.1",
+    "@types/node": "^22.20.0",
+    "@types/react": "~18.3.1",
+    "@types/react-dom": "~18.3.0",
+    "esbuild": "^0.25.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "typescript": "6.0.3",
+    "vitest": "^4.1.8",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.5-rc.1"
+  }
+}

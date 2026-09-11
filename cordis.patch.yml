@@ -1,0 +1,4 @@
+# dsh bundle patch: mounts the nexus plugin line into a profile's layer stack.
+- insert:
+    - id: nexus
+      name: '@chenqiuyushuang/dsh-nexus'

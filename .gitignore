@@ -1,0 +1,35 @@
+# 依赖与构建产物
+node_modules/
+dist/
+*.tsbuildinfo
+lib/types/
+
+# 包管理器缓存（曾误入库：.pnpm-store/v11/index.db 是机器相关的 SQLite 缓存）
+.npm-cache/
+.pnpm-store/
+.vite/
+
+# 本机杂项
+.DS_Store
+*.log
+Thumbs.db
+
+# 凭据（永远不要提交）
+.env
+.env.*
+*.pem
+*.key
+!*.key.example
+
+# 本地测试环境与数据（曾误入库：含真实会话转录与记忆库）
+_dsh_test/
+_archive/
+.dsh-repair/
+.backup-history/
+*.jsonl
+*.jsonl.zstd
+session*.zstd
+
+# 运行时可能落地的本地状态
+.nexus/
+*.local.json

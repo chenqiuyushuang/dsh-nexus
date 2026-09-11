@@ -1,0 +1,26 @@
+#!/bin/sh
+# Nexus pre-commit 守卫
+#
+# 为什么需要它：.gitignore 只是"约定"，它拦不住 `git add -f`，也拦不住把本地
+# 测试环境放进仓库目录后再强行添加。历史上本项目就因此把真实会话转录和记忆库
+# （_dsh_test/、.pnpm-store/）提交进了公开仓库，只能重写历史来补救。
+#
+# 本钩子做硬拦截：命中下列路径的暂存文件会导致提交失败。
+# 确属误报时用 `git commit --no-verify` 显式绕过（请写明理由）。
+
+blocked=$(git diff --cached --name-only --diff-filter=ACM | grep -E \
+  '(^|/)(node_modules|_dsh_test|_archive|\.dsh-repair|\.backup-history|\.pnpm-store|\.npm-cache|dist)/|(^|/)\.env($|\.)|\.(zstd|jsonl|pem|key|p12|log)$|(^|/)session[-.].*\.json' \
+  || true)
+
+if [ -n "$blocked" ]; then
+  echo "" >&2
+  echo "✖ 提交被 pre-commit 守卫拦截：以下文件不应入库" >&2
+  echo "$blocked" | sed 's/^/    /' >&2
+  echo "" >&2
+  echo "  这些路径属于本地测试环境、包管理器缓存、凭据或会话数据。" >&2
+  echo "  若确属误报，用 git commit --no-verify 显式绕过。" >&2
+  echo "" >&2
+  exit 1
+fi
+
+exit 0

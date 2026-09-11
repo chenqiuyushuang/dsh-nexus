@@ -1,0 +1,304 @@
+/*
+ * Nexus /nexus 面板主题。
+ *
+ * 所有 --nx-* 值抽取自 deepseek-harness/packages/client/ui-theme/src/styles/
+ * {base,corner-shape,design-platform}.css，与本仓库无关；DSH 升级相应 token 时须同步。
+ * 独立页不在 DSH SPA 内，无法复用运行时 token 注入，故在此内联对齐值。
+ *
+ * 暗色切换沿用 DSH 的 body[data-ds-dark-theme]（由 src/ui/index.ts 依据
+ * prefers-color-scheme 设置），与 DSH ThemePresenter 行为一致。
+ */
+
+/* ---- 静态色（design-platform.css --dsw-static-*，亮暗一致，仅列面板用到的） ---- */
+body {
+  --nx-static-neutral-200: rgb(229, 229, 229);
+  --nx-static-neutral-300: rgb(212, 212, 212);
+  --nx-static-neutral-bluish-00: rgb(255, 255, 255);
+  --nx-static-neutral-bluish-50: rgb(249, 250, 251);
+  --nx-static-neutral-bluish-60: rgb(245, 246, 247);
+  --nx-static-neutral-bluish-75: rgb(241, 243, 245);
+  --nx-static-neutral-bluish-100: rgb(235, 238, 242);
+  --nx-static-neutral-bluish-150: rgb(233, 236, 242);
+  --nx-static-neutral-bluish-200: rgb(225, 229, 238);
+  --nx-static-neutral-bluish-300: rgb(207, 211, 214);
+  --nx-static-neutral-bluish-400: rgb(173, 178, 184);
+  --nx-static-neutral-bluish-500: rgb(151, 157, 166);
+  --nx-static-neutral-bluish-600: rgb(129, 133, 140);
+  --nx-static-neutral-bluish-700: rgb(97, 102, 107);
+  --nx-static-neutral-bluish-750: rgb(67, 69, 74);
+  --nx-static-neutral-bluish-800: rgb(53, 54, 56);
+  --nx-static-neutral-bluish-850: rgb(44, 44, 46);
+  --nx-static-neutral-bluish-875: rgb(35, 35, 36);
+  --nx-static-neutral-bluish-900: rgb(27, 27, 28);
+  --nx-static-neutral-bluish-950: rgb(21, 21, 23);
+  --nx-static-neutral-bluish-1000: rgb(15, 17, 21);
+  --nx-static-deepseek-50: rgb(237, 243, 254);
+  --nx-static-deepseek-100: rgb(228, 237, 253);
+  --nx-static-deepseek-400: rgb(103, 158, 254);
+  --nx-static-deepseek-500: rgb(65, 118, 230);
+  --nx-static-deepseek-800: rgb(52, 65, 91);
+  --nx-static-green-100: rgb(230, 250, 237);
+  --nx-static-green-400: rgb(78, 209, 126);
+  --nx-static-green-500: rgb(34, 197, 94);
+  --nx-static-green-900: rgb(35, 60, 44);
+  --nx-static-amber-100: rgb(254, 245, 231);
+  --nx-static-amber-500: rgb(245, 158, 11);
+  --nx-static-amber-600: rgb(221, 134, 41);
+  --nx-static-amber-900: rgb(39, 36, 31);
+  --nx-static-red-100: rgb(254, 226, 226);
+  --nx-static-red-400: rgb(242, 90, 90);
+  --nx-static-red-500: rgb(239, 68, 68);
+  --nx-static-red-600: rgb(236, 19, 19);
+  --nx-static-red-900: rgb(87, 12, 12);
+}
+
+/* ---- 全局固定 token ---- */
+:root {
+  /* 字体栈（base.css --dsw-font-family / --ds-font-family-code） */
+  --nx-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --nx-font-code: 'SF Mono', 'JetBrains Mono', 'Fira Code', Consolas, 'Liberation Mono', Menlo,
+    Courier, 'PingFang SC', 'Microsoft YaHei';
+  /* 圆角（corner-shape.css superellipse(1.5)；提供 border-radius 回退） */
+  --nx-radius: 12px;
+  --nx-radius-sm: 8px;
+  /* 阴影（base.css --dsw-shadow-lv1 / lv2） */
+  --nx-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+  --nx-shadow-lv2: 0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 8px 0 rgba(0, 0, 0, 0.04);
+  /* 内容字号（theme-settings：默认 14，范围 12-17） */
+  --nx-content-font-size: 14px;
+  --nx-content-font-line: 1.65;
+}
+
+/* ---- 亮色 alias（design-platform.css body alias） ---- */
+body {
+  --nx-bg-base: var(--nx-static-neutral-bluish-00);
+  --nx-bg-card: var(--nx-static-neutral-bluish-00);
+  --nx-bg-subtle: var(--nx-static-neutral-bluish-50);
+  --nx-bg-hover: var(--nx-static-neutral-bluish-75);
+  --nx-bg-active: var(--nx-static-neutral-bluish-100);
+  --nx-bg-accent: var(--nx-static-deepseek-50);
+  --nx-border: var(--nx-static-neutral-bluish-150);
+  --nx-border-strong: var(--nx-static-neutral-bluish-400);
+  --nx-text: var(--nx-static-neutral-bluish-1000);
+  --nx-text-secondary: var(--nx-static-neutral-bluish-700);
+  --nx-text-tertiary: var(--nx-static-neutral-bluish-600);
+  --nx-text-muted: var(--nx-static-neutral-bluish-500);
+  --nx-accent: var(--nx-static-deepseek-500);
+  --nx-accent-hover: var(--nx-static-deepseek-400);
+  --nx-accent-soft: var(--nx-static-deepseek-100);
+  --nx-primary: var(--nx-static-neutral-bluish-1000);
+  --nx-primary-text: var(--nx-static-neutral-bluish-00);
+  --nx-success: var(--nx-static-green-500);
+  --nx-success-soft: var(--nx-static-green-100);
+  --nx-success-text: var(--nx-static-green-900);
+  --nx-warn: var(--nx-static-amber-500);
+  --nx-warn-soft: var(--nx-static-amber-100);
+  --nx-warn-text: var(--nx-static-amber-600);
+  --nx-error: var(--nx-static-red-600);
+  --nx-error-soft: var(--nx-static-red-100);
+  --nx-error-text: var(--nx-static-red-500);
+  --nx-scrollbar-thumb: var(--nx-static-neutral-200);
+  --nx-scrollbar-thumb-hover: var(--nx-static-neutral-300);
+  --nx-bg-card-elevated: var(--nx-static-neutral-bluish-00);
+  --nx-border-card: rgba(0, 0, 0, 0.1);
+}
+
+/* ---- 暗色 alias（design-platform.css body[data-ds-dark-theme] alias） ---- */
+body[data-ds-dark-theme] {
+  --nx-bg-base: var(--nx-static-neutral-bluish-850);
+  --nx-bg-card: var(--nx-static-neutral-bluish-850);
+  --nx-bg-subtle: var(--nx-static-neutral-bluish-900);
+  --nx-bg-hover: var(--nx-static-neutral-bluish-850);
+  --nx-bg-active: var(--nx-static-neutral-bluish-800);
+  --nx-bg-accent: var(--nx-static-neutral-bluish-800);
+  --nx-border: var(--nx-static-neutral-bluish-700);
+  --nx-border-strong: var(--nx-static-neutral-bluish-600);
+  --nx-text: var(--nx-static-neutral-bluish-50);
+  --nx-text-secondary: var(--nx-static-neutral-bluish-300);
+  --nx-text-tertiary: var(--nx-static-neutral-bluish-400);
+  --nx-text-muted: var(--nx-static-neutral-bluish-500);
+  --nx-accent: var(--nx-static-deepseek-400);
+  --nx-accent-hover: var(--nx-static-deepseek-500);
+  --nx-accent-soft: var(--nx-static-deepseek-800);
+  --nx-primary: var(--nx-static-neutral-bluish-50);
+  --nx-primary-text: var(--nx-static-neutral-bluish-1000);
+  --nx-success: var(--nx-static-green-500);
+  --nx-success-soft: var(--nx-static-green-900);
+  --nx-success-text: var(--nx-static-green-400);
+  --nx-warn: var(--nx-static-amber-500);
+  --nx-warn-soft: var(--nx-static-amber-900);
+  --nx-warn-text: var(--nx-static-amber-600);
+  --nx-error: var(--nx-static-red-400);
+  --nx-error-soft: var(--nx-static-red-900);
+  --nx-error-text: var(--nx-static-red-400);
+  --nx-scrollbar-thumb: var(--nx-static-neutral-bluish-700);
+  --nx-scrollbar-thumb-hover: var(--nx-static-neutral-bluish-600);
+  --nx-bg-card-elevated: var(--nx-static-neutral-bluish-800);
+  --nx-border-card: rgba(255, 255, 255, 0.12);
+}
+
+/* ---- 页面基础 ---- */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font: var(--nx-content-font-size) / var(--nx-content-font-line) var(--nx-font);
+  background: var(--nx-bg-base);
+  color: var(--nx-text);
+  -webkit-font-smoothing: antialiased;
+}
+.nx-app { max-width: 880px; margin: 0 auto; padding: 28px 20px 64px; }
+
+/* ---- 头部 ---- */
+.nx-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.nx-logo {
+  width: 32px; height: 32px; flex: none; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--nx-radius-sm); background: var(--nx-accent-soft); color: var(--nx-accent);
+}
+.nx-title { font-size: 18px; font-weight: 600; line-height: 1.4; margin: 0; letter-spacing: 0.2px; color: var(--nx-text); }
+.nx-sub { margin: 4px 0 0; font-size: 13px; color: var(--nx-text-tertiary); }
+
+/* ---- 横幅 ---- */
+.nx-banner {
+  margin: 0 0 12px; padding: 8px 12px; border-radius: var(--nx-radius-sm);
+  background: var(--nx-warn-soft); border: 1px solid var(--nx-warn);
+  color: var(--nx-warn-text); font-size: 12.5px;
+}
+
+/* ---- 统计 --- */
+.nx-stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 0 0 14px; }
+.nx-chip {
+  flex: 1; text-align: center; padding: 8px 12px; background: var(--nx-bg-card); border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius); font-size: 13px; color: var(--nx-text);
+  box-shadow: var(--nx-shadow);
+}
+.nx-chip b { font-weight: 600; margin-left: 4px; }
+.nx-chip.ok b { color: var(--nx-success); }
+.nx-chip.warn b { color: var(--nx-warn); }
+.nx-chip.bad b { color: var(--nx-error); }
+.nx-chip.accent b { color: var(--nx-accent); }
+
+/* ---- 工具条 ---- */
+.nx-toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 16px; }
+.nx-search {
+  padding: 8px 12px; border: 1px solid var(--nx-border); border-radius: var(--nx-radius-sm);
+  background: var(--nx-bg-card); color: var(--nx-text); font: inherit; outline: none;
+  flex: 1; min-width: 140px;
+}
+.nx-search:focus { border-color: var(--nx-accent); }
+.nx-select { position: relative; }
+.nx-select-trigger {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  border: 1px solid var(--nx-border); border-radius: var(--nx-radius-sm);
+  background: var(--nx-bg-card); color: var(--nx-text); font: inherit; cursor: pointer;
+}
+.nx-select-trigger:hover { border-color: var(--nx-accent); }
+.nx-select-caret { color: var(--nx-text-tertiary); }
+.nx-select-menu {
+  position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; min-width: 100%;
+  background: var(--nx-bg-card); border: 1px solid var(--nx-border); border-radius: var(--nx-radius);
+  box-shadow: var(--nx-shadow-lv2); padding: 6px; max-height: 320px; overflow-y: auto;
+}
+.nx-select-group { padding-top: 2px; }
+.nx-select-group-label { padding: 8px 12px 3px; font-size: 11px; color: var(--nx-text-tertiary); }
+.nx-select-option {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  padding: 10px 12px; border: none; background: transparent; color: var(--nx-text);
+  font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; border-radius: var(--nx-radius-sm);
+}
+.nx-select-option:hover { background: var(--nx-bg-hover); }
+.nx-select-option.selected { color: var(--nx-accent); }
+.nx-info { margin: -4px 0 12px; font-size: 11.5px; color: var(--nx-text-tertiary); }
+.nx-threshold { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; font-size: 12px; color: var(--nx-text-secondary); }
+.nx-extractor-row { align-items: center; }
+.nx-extractor-row .nx-select { flex: 1; }
+.nx-extractor-row .nx-select-trigger { width: 100%; min-width: 0; }
+.nx-threshold-label { flex: none; }
+.nx-threshold-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--nx-text-tertiary); }
+.nx-threshold-input { flex: none; width: 96px; min-width: 0; padding: 6px 10px; height: auto; }
+.nx-threshold-hint { margin: -6px 0 12px; font-size: 11px; color: var(--nx-text-tertiary); }
+.nx-settings { margin: 0 0 16px; padding: 12px 14px; background: var(--nx-bg-card); border: 1px solid var(--nx-border-card); border-radius: var(--nx-radius); }
+.nx-settings-title { font-size: 12px; color: var(--nx-text-secondary); margin-bottom: 10px; }
+.nx-settings-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+.nx-add { display: flex; flex-direction: column; gap: 8px; margin: 0 0 16px; }
+.nx-add .nx-edit { margin: 0; }
+.nx-edit-wrap { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 2px; }
+.nx-edit-wrap .nx-edit { margin: 0; }
+
+/* ---- 列表 ---- */
+.nx-list { display: flex; flex-direction: column; gap: 10px; }
+.nx-row {
+  background: var(--nx-bg-card-elevated); border: 0.5px solid var(--nx-border-card);
+  border-radius: 14px; padding: 14px 16px; transition: border-color .16s;
+}
+.nx-row:hover { border-color: var(--nx-text-tertiary); }
+.nx-row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.nx-tags { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nx-tag-sep { color: var(--nx-text-muted); font-size: 12px; opacity: 0.7; }
+.nx-tag {
+  font-size: 12px; line-height: 1.5; padding: 2px 9px; border-radius: var(--nx-radius-sm);
+  border: 1px solid transparent; background: var(--nx-bg-accent); color: var(--nx-accent);
+}
+.nx-tag.scope { background: var(--nx-bg-accent); color: var(--nx-accent); }
+.nx-tag.slot-personal { background: var(--nx-success-soft); color: var(--nx-success-text); }
+.nx-tag.slot-user { background: var(--nx-success-soft); color: var(--nx-success-text); }
+.nx-tag.slot-project { background: var(--nx-warn-soft); color: var(--nx-warn-text); }
+.nx-tag.slot-episode { background: var(--nx-accent-soft); color: var(--nx-accent); }
+.nx-tag.slot-feedback { background: var(--nx-bg-active); color: var(--nx-accent); }
+.nx-tag.slot-reference { background: var(--nx-bg-subtle); color: var(--nx-text-secondary); }
+.nx-tag.status-active { background: transparent; border-color: var(--nx-success); color: var(--nx-success-text); }
+.nx-tag.status-pending { background: transparent; border-color: var(--nx-warn); color: var(--nx-warn-text); }
+.nx-tag.status-needs-review { background: transparent; border-color: var(--nx-error); color: var(--nx-error-text); }
+.nx-tag.status-archived, .nx-tag.status-superseded { background: transparent; border-color: var(--nx-text-muted); color: var(--nx-text-tertiary); }
+
+.nx-statement { margin: 8px 0 2px; white-space: pre-wrap; word-break: break-word; color: var(--nx-text); }
+.nx-hint { margin: 6px 0 0; font-size: 12px; color: var(--nx-warn-text); }
+.nx-hint.replaced { color: var(--nx-text-tertiary); }
+.nx-edit {
+  display: block; width: 100%; margin: 8px 0 2px; padding: 8px 12px; border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius-sm); background: var(--nx-bg-card); color: var(--nx-text);
+  font: var(--nx-content-font-size) / 1.5 var(--nx-font); resize: vertical; outline: none;
+}
+.nx-edit:focus { border-color: var(--nx-accent); }
+.nx-meta {
+  font-size: 11.5px; color: var(--nx-text-tertiary); display: flex; gap: 12px; flex-wrap: wrap;
+  align-items: center;
+}
+.nx-actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.nx-btn {
+  padding: 6px 14px; border: 1px solid var(--nx-border); background: var(--nx-bg-card);
+  border-radius: var(--nx-radius-sm); cursor: pointer; font-size: 12.5px; color: var(--nx-text);
+  font-family: inherit;
+}
+.nx-btn:hover { border-color: var(--nx-accent); color: var(--nx-accent); }
+.nx-btn.primary { background: var(--nx-primary); border-color: var(--nx-primary); color: var(--nx-primary-text); }
+.nx-btn.primary:hover { opacity: 0.9; }
+.nx-btn.danger { color: var(--nx-error-text); }
+.nx-btn.danger:hover { border-color: var(--nx-error); color: var(--nx-error); }
+.nx-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* ---- 关系 ---- */
+.nx-neighbors {
+  margin-top: 8px; padding: 8px 10px; background: var(--nx-bg-subtle);
+  border: 1px dashed var(--nx-border); border-radius: var(--nx-radius-sm); font-size: 12.5px;
+}
+.nx-n-item { padding: 3px 0; color: var(--nx-text); }
+.nx-n-edge { color: var(--nx-text-tertiary); margin-right: 6px; }
+
+/* ---- 空态 / 页脚 ---- */
+.nx-empty { text-align: center; color: var(--nx-text-secondary); padding: 40px 0 20px; }
+.nx-footer {
+  margin-top: 20px; font-size: 11.5px; color: var(--nx-text-tertiary); text-align: center;
+}
+.nx-footer-meta { margin: 0 0 6px; color: var(--nx-text-tertiary); }
+.nx-footer code { font-family: var(--nx-font-code); }
+
+/* ---- DSH 滚动条皮肤（对齐 ui-theme scrollbar.css） ---- */
+@supports not selector(::-webkit-scrollbar) {
+  body, body * { scrollbar-width: thin; scrollbar-color: var(--nx-scrollbar-thumb) transparent; }
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--nx-scrollbar-thumb); }
+::-webkit-scrollbar-thumb:hover { background: var(--nx-scrollbar-thumb-hover); }
+::-webkit-scrollbar-corner { background: transparent; }
