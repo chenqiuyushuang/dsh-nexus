@@ -1,7 +1,7 @@
 {
   "name": "@chenqiuyushuang/dsh-nexus",
   "description": "Nexus — a zero-config, cost-protected memory layer for DeepSeek Harness",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "keywords": [
     "dsh-plugin",
     "dsh",
@@ -52,7 +52,8 @@
     "bench": "vitest run bench",
     "build": "node scripts/build.mjs",
     "prepublishOnly": "npm run build",
-    "panel": "node scripts/panel-shot.mjs"
+    "panel": "node scripts/panel-shot.mjs",
+    "verify:install": "node scripts/verify-install.mjs"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "3.18.2",
