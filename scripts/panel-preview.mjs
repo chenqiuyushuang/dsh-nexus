@@ -25,7 +25,7 @@ const resize = fixedHost
   ? ''
   : 'var f=document.getElementById("f");f.style.height=Math.min(e.data.height,620)+"px";'
 const harness = '<!doctype html><html><head><meta charset="utf-8"><style>html{font-size:' + font + 'px}html,body{margin:0;background:#111}iframe{border:0;display:block}</style></head><body' + (dark ? ' data-ds-dark-theme' : '') + '>' +
-  '<iframe id="f" src="/nexus" style="width:' + String(width) + 'px;height:' + String(height) + 'px"></iframe>' +
+  '<iframe id="f" src="/nexus' + (process.argv.includes('--replica') ? '?panel=sample' : '') + '" style="width:' + String(width) + 'px;height:' + String(height) + 'px"></iframe>' +
   '<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="nexus-height"){window.__panelHeight=e.data.height;' + resize + '}})<\/script></body></html>'
 const port = Number(arg('port', '9336'))
 const profile = fileURLToPath(new URL('../_shots/chrome-profile/', import.meta.url))
@@ -70,7 +70,7 @@ listeners.push((msg) => {
   const url = request.url
   if (/\/harness$/.test(url)) {
     void send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'content-type', value: 'text/html; charset=utf-8' }], body: Buffer.from(harness, 'utf8').toString('base64') })
-  } else if (/\/nexus$/.test(url)) {
+  } else if (/\/nexus(\?|$)/.test(url)) {
     void send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'content-type', value: 'text/html; charset=utf-8' }], body: Buffer.from(html, 'utf8').toString('base64') })
   } else {
     void send('Fetch.continueRequest', { requestId })

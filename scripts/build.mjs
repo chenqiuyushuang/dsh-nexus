@@ -53,6 +53,7 @@ await build({
 // 组装单文件 HTML：token CSS + React bundle 全内联，renderShell 直接返回。
 const theme = await readFile(new URL('../src/ui/theme.css', import.meta.url), 'utf8')
   + '\n' + await readFile(new URL('../src/ui/sample-palette.css', import.meta.url), 'utf8')
+  + '\n' + await readFile(new URL('../src/ui/replica.css', import.meta.url), 'utf8')
 const uiJs = await readFile(new URL('../lib/nexus-ui.js', import.meta.url), 'utf8')
 const safeJs = uiJs.replace(/<\/script/gi, '<\\/script')
 const html = `<!DOCTYPE html>
