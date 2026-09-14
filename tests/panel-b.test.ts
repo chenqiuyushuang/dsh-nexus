@@ -73,22 +73,61 @@ describe('0.8 面板 B', () => {
     const strip = container.querySelector('.status-strip')
     expect(strip).not.toBeNull()
     expect(strip!.textContent).toContain('2 条进入上下文')
-    expect(strip!.textContent).toContain('115 B / 1.00 KB')
+    // 千字节改 1 位小数（两位会把窄栏的预算行挤到换行）
+    expect(strip!.textContent).toContain('115 B / 1.0 KB')
     expect(strip!.textContent).toContain('1 条待确认')
   })
 
-  it('点开面板：模式三态 + 预算条 + 统计行 + 四个标签', async () => {
+  it('点开面板：模式三态 + 预算条 + 四个标签 + 真 dialog 语义', async () => {
     await mount()
     click('.status-strip')
-    expect(container.querySelector('.panel')).not.toBeNull()
+    const panel = container.querySelector('.panel')
+    expect(panel).not.toBeNull()
+    // 浮层与对话框语义（评审 P0：原来只有一层无样式 div，没有 role）
+    expect(panel!.getAttribute('role')).toBe('dialog')
+    expect(panel!.getAttribute('aria-modal')).toBe('true')
+    expect(container.querySelector('.overlay')).not.toBeNull()
     const modes = Array.from(container.querySelectorAll('.mode-btn')).map((b) => b.textContent)
     expect(modes).toEqual(['记录中', '只看不记', '已关闭'])
     expect(container.querySelector('.mode-btn.active')?.textContent).toBe('记录中')
     expect(container.querySelector('.budget-mini-bar')).not.toBeNull()
-    const stats = Array.from(container.querySelectorAll('.stat .lbl')).map((n) => n.textContent)
-    expect(stats).toEqual(['今日写入', '待确认', '已拒收', '注入次数'])
+    // 面板打开时状态条隐藏（信息重复，且白占 41px）
+    expect(container.querySelector('.status-strip')).toBeNull()
     const tabs = Array.from(container.querySelectorAll('.tab')).map((t) => (t.textContent ?? '').replace(/\s*\d+\s*$/, '').trim())
-    expect(tabs).toEqual(['归因', '记忆库', '回收站', '设置'].map((s) => (s === '归因' ? '归因' : s)))
+    expect(tabs).toEqual(['归因', '记忆库', '回收站', '设置'])
+    expect(container.querySelector('.tabs')?.getAttribute('role')).toBe('tablist')
+    expect(container.querySelectorAll('[role="tab"][aria-selected="true"]').length).toBe(1)
+  })
+
+  it('统计行下移到设置页的「运行状态」（顶部不再占一行）', async () => {
+    await mount()
+    click('.status-strip')
+    expect(container.querySelector('.stats-row')).toBeNull()
+    click('.tab:nth-child(4)')
+    expect(container.textContent).toContain('今日写入')
+    expect(container.textContent).toContain('注入次数')
+  })
+
+  it('归因组头可聚焦可折叠，且渲染出 caret', async () => {
+    await mount()
+    click('.status-strip')
+    const header = container.querySelector('.reason-header')!
+    expect(header.getAttribute('role')).toBe('button')
+    expect(header.getAttribute('tabindex')).toBe('0')
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    expect(header.querySelector('.caret')).not.toBeNull()
+    act(() => { header.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(container.querySelector('.reason-header')!.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('读取失败时不显示全 0 假状态，只给重试入口', async () => {
+    vi.stubGlobal('fetch', () => Promise.reject(new Error('boom')))
+    await mount()
+    const strip = container.querySelector('.status-strip')
+    expect(strip).not.toBeNull()
+    expect(strip!.textContent).toContain('记忆读取失败')
+    expect(strip!.textContent).not.toContain('0 条进入上下文')
+    expect(strip!.textContent).toContain('点此重试')
   })
 
   it('归因视图按"进入 / 未进入"分组，未进入的给出原因', async () => {

@@ -80,7 +80,8 @@ function confLevel(confidence?: number): string {
   return pct >= 90 ? 'high' : pct >= 60 ? 'mid' : 'low'
 }
 function fmtB(bytes: number): string {
-  return bytes >= 1024 ? (bytes / 1024).toFixed(2) + ' KB' : String(bytes) + ' B'
+  // 两位小数会把 418px 的行挤到换行（原型实测："1.00 KB" 的 KB 被折下去）
+  return bytes >= 1024 ? (bytes / 1024).toFixed(bytes >= 10240 ? 0 : 1) + ' KB' : String(bytes) + ' B'
 }
 function relTime(at: number): string {
   const diff = Date.now() - at
@@ -113,6 +114,8 @@ export function BPanel(): React.ReactNode {
   const [libFilter, setLibFilter] = useState('all')
   const [scopeFilter, setScopeFilter] = useState<'all' | 'user' | 'project' | 'episode'>('all')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // 彻底清除不可恢复 → 二次确认（原来 70×30 一键清 34 条，无确认无撤销）
+  const [emptyConfirm, setEmptyConfirm] = useState(false)
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editing, setEditing] = useState<MemoryItem | null>(null)
@@ -133,6 +136,9 @@ export function BPanel(): React.ReactNode {
   const [extractSel, setExtractSel] = useState('')
   const toastTimer = useRef<number | null>(null)
   const lastChecked = useRef(-1)
+  // portal 目标必须是 .nx-b 根节点：菜单/弹窗的样式都挂在这个作用域下，
+  // portal 到 document.body 会掉出作用域（实测 position:static、rect y=448，点不到）
+  const rootRef = useRef<HTMLDivElement | null>(null)
 
   const load = useCallback(async (): Promise<void> => {
     setError(null)
@@ -160,16 +166,41 @@ export function BPanel(): React.ReactNode {
 
   useEffect(() => { void load() }, [load])
 
+  // Esc：关菜单优先，其次关面板（原型 title 里承诺过 "关闭 (Esc)"，之前没实现）
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      if (menu !== null) { setMenu(null); return }
+      if (editing !== null) { setEditing(null); return }
+      if (creating) { setCreating(false); return }
+      if (relatedFor !== null) { setRelatedFor(null); return }
+      if (open) setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('keydown', onKey) }
+  }, [menu, editing, creating, relatedFor, open])
+
+  // 菜单点外关闭（原型只有 onClick 自关，点菜单自己也会关）
+  useEffect(() => {
+    if (menu === null) return
+    const onDown = (e: MouseEvent): void => { if ((e.target as HTMLElement)?.closest('[data-nxb-menu]') == null) setMenu(null) }
+    document.addEventListener('mousedown', onDown)
+    return () => { document.removeEventListener('mousedown', onDown) }
+  }, [menu])
+
   const showToast = useCallback((text: string, undo?: () => void): void => {
     setToast(undo === undefined ? { text } : { text, undo })
     if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
     toastTimer.current = window.setTimeout(() => { setToast(null) }, undo === undefined ? 2200 : 5000)
   }, [])
 
-  const run = async (path: string, body: unknown, label: string, undo?: () => void): Promise<void> => {
-    try { await post(path, body); await load(); showToast(label, undo) }
-    catch (err) { showToast(label + '失败：' + (err instanceof Error ? err.message : String(err))) }
+  /** 执行一次写操作，返回是否成功 —— 失败时调用方不能假设状态已变（批量选择不能白清）。 */
+  const run = async (path: string, body: unknown, label: string, undo?: () => void): Promise<boolean> => {
+    try { await post(path, body); await load(); showToast(label, undo); return true }
+    catch (err) { showToast(label + '失败：' + (err instanceof Error ? err.message : String(err))); return false }
   }
+  const restoreIds = (ids: string[], any = false): Promise<boolean> =>
+    run('/nexus/api/memory/restore', any ? { ids, any: true } : { ids }, '已恢复 ' + String(ids.length) + ' 条')
 
   // ---- 模式：三个按钮立即生效并落盘 ----
   const panelMode: PanelMode = state?.mode === 'write-only' ? 'readonly' : state?.mode === 'pause' ? 'paused' : 'readwrite'
@@ -195,36 +226,33 @@ export function BPanel(): React.ReactNode {
     const inject = state?.injection
     if (inject === undefined) return []
     const shown = inject.shown
+    // 分组必须互斥：一条记忆只能出现在一个组里。
+    // 第一版把「进入上下文」和「用户明文 / 模型推断」并列，导致同一条被列了两遍（用户实拍可见），
+    // 现在改成：置顶 / 进入 / 未进入（按原因）三块，来源只在组头上做分布提示。
     const pinned = shown.filter((e) => e.pinned)
     const rest = shown.filter((e) => !e.pinned)
-    const explicit = rest.filter((e) => sourceOf(e) === 'user-declared')
-    const others = rest.filter((e) => sourceOf(e) !== 'user-declared')
-    const out = inject.dropped
+    const sourceMix = (cards: InjectionEntry[]): string => {
+      const user = cards.filter((e) => sourceOf(e) === 'user-declared').length
+      const model = cards.filter((e) => sourceOf(e) === 'model-inferred').length
+      const agent = cards.filter((e) => sourceOf(e) === 'agent-curated').length
+      const parts: string[] = []
+      if (user > 0) parts.push('用户明文 ' + String(user))
+      if (model > 0) parts.push('模型推断 ' + String(model))
+      if (agent > 0) parts.push('子代理 ' + String(agent))
+      return parts.join(' · ')
+    }
     const buckets = new Map<string, InjectionDrop[]>()
-    for (const drop of out) {
+    for (const drop of inject.dropped) {
       const arr = buckets.get(drop.reason) ?? []
       arr.push(drop)
       buckets.set(drop.reason, arr)
     }
     return [
-      { key: 'in', label: '进入上下文', marker: 'in', cards: rest, count: rest.length, bytes: rest.reduce((s, e) => s + e.bytes, 0) },
-      ...(pinned.length > 0 ? [{ key: 'pinned', label: '置顶插队', marker: 'warn', cards: pinned, count: pinned.length, bytes: pinned.reduce((s, e) => s + e.bytes, 0) }] : []),
-      ...(explicit.length > 0 ? [{ key: 'explicit', label: '用户显式声明', marker: 'in', cards: explicit, count: explicit.length, bytes: explicit.reduce((s, e) => s + e.bytes, 0) }] : []),
-      ...(others.length > 0 ? [{ key: 'model', label: '模型推断', marker: 'in', cards: others, count: others.length, bytes: others.reduce((s, e) => s + e.bytes, 0) }] : []),
-      ...Array.from(buckets.entries()).map(([reason, cards]) => ({ key: reason, label: '未进入 · ' + (DROP_WORD[reason] ?? reason), marker: 'out', cards, count: cards.length, bytes: 0 })),
+      ...(pinned.length > 0 ? [{ key: 'pinned', label: '置顶插队', marker: 'warn', cards: pinned, count: pinned.length, bytes: pinned.reduce((s, e) => s + e.bytes, 0), mix: sourceMix(pinned) }] : []),
+      { key: 'in', label: '进入上下文', marker: 'in', cards: rest, count: rest.length, bytes: rest.reduce((s, e) => s + e.bytes, 0), mix: sourceMix(rest) },
+      ...Array.from(buckets.entries()).map(([reason, cards]) => ({ key: reason, label: '未进入 · ' + (DROP_WORD[reason] ?? reason), marker: 'out', cards, count: cards.length, bytes: 0, mix: '' })),
     ]
   }, [state])
-
-  // 用户显式声明 / 模型推断会和"进入上下文"重复，这里按 id 去重展示（B 的分组本身就是互斥的）
-  const dedupGroups = useMemo(() => {
-    const seen = new Set<string>()
-    return groups.filter((g) => g.key !== 'explicit' && g.key !== 'model').map((g) => {
-      for (const c of g.cards) seen.add(c.id)
-      return g
-    }).concat(groups.filter((g) => seen.size > 0 && (g.key === 'explicit' || g.key === 'model')).map((g) => ({
-      ...g, cards: g.cards.filter((c) => c.id !== '' && true),
-    })))
-  }, [groups])
 
   // ---- 记忆库筛选 ----
   const library = useMemo(() => items.filter((item) => {
@@ -260,13 +288,15 @@ export function BPanel(): React.ReactNode {
     lastChecked.current = index
   }
 
-  const batch = async (kind: 'archive' | 'trash' | 'confirm' | 'pin'): Promise<void> => {
+  const batch = async (kind: 'archive' | 'trash' | 'confirm'): Promise<void> => {
     const ids = [...selected]
     if (ids.length === 0) return
-    if (kind === 'archive') await run('/nexus/api/memory/reject', { ids }, '已归档 ' + String(ids.length) + ' 条（同句不再自动记住）')
-    if (kind === 'trash') await run('/nexus/api/memory/delete', { ids }, '已移入回收站 ' + String(ids.length) + ' 条')
-    if (kind === 'confirm') await run('/nexus/api/memory/confirm', { ids }, '已确认 ' + String(ids.length) + ' 条')
-    setSelected(new Set())
+    let ok = false
+    // 归档/入回收站补撤销（原来只有噪声横幅有）；失败不清空选择
+    if (kind === 'archive') ok = await run('/nexus/api/memory/reject', { ids }, '已归档 ' + String(ids.length) + ' 条（同句不再自动记住）', () => { void restoreIds(ids, true) })
+    if (kind === 'trash') ok = await run('/nexus/api/memory/delete', { ids }, '已移入回收站 ' + String(ids.length) + ' 条', () => { void restoreIds(ids) })
+    if (kind === 'confirm') ok = await run('/nexus/api/memory/confirm', { ids }, '已确认 ' + String(ids.length) + ' 条')
+    if (ok) setSelected(new Set())
   }
 
   const openEdit = async (item: MemoryItem): Promise<void> => {
@@ -305,32 +335,43 @@ export function BPanel(): React.ReactNode {
   const scopeTotal = Math.max(1, scopeCounts.user + scopeCounts.project + scopeCounts.episode)
 
   return (
-    <div className="nx-b">
+    <div className="nx-b" ref={rootRef}>
       {/* 加载中也要有可见状态：否则数据到达前面板是一片空白 */}
-      {loading && state === null && <div className="status-strip"><span className="dot readonly" /><span className="primary">记忆加载中…</span></div>}
+      {/* 首屏：加载中 / 读取失败都要有真实状态。
+          之前失败时状态条照样渲染「0 条进入上下文 | 0 B | 0 条待确认」—— 把"读取失败"伪装成"没有记忆"。 */}
+      {state === null && (
+        <div className="status-strip" role="status" aria-live="polite" aria-busy={loading}
+          onClick={() => { if (!loading) { setLoading(true); void load() } }}>
+          <span className={'dot' + (error !== null ? ' paused' : ' readonly')} aria-hidden="true" />
+          <span className="primary">{loading ? '记忆加载中…' : '记忆读取失败'}</span>
+          {error !== null && <><span className="sep" /><span className="warn-txt">点此重试</span></>}
+        </div>
+      )}
 
-      {/* 顶部状态条：一行摘要，点开面板（B 的入口形态） */}
-      {!(loading && state === null) && (
-      <div className="status-strip" role="button" tabIndex={0} onClick={() => setOpen(true)} onKeyDown={(e) => { if (e.key === 'Enter') setOpen(true) }}>
-        <span className={'dot' + (state?.noise !== undefined && state.noise.count > 0 ? ' warn' : panelMode === 'paused' ? ' paused' : panelMode === 'readonly' ? ' readonly' : '')} />
+      {/* 顶部状态条：一行摘要，点开面板（B 的入口形态）。
+          面板打开时隐藏它 —— 它显示的三项与面板首行完全重复，还白占 41px（448 高的 9%）。 */}
+      {state !== null && !open && (
+      <div className="status-strip" role="button" tabIndex={0} aria-expanded={open} aria-controls="nx-b-panel"
+        onClick={() => setOpen(true)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(true) } }}>
+        {/* 圆点只表模式：之前 noise>0 会盖掉 paused/readonly，最该显眼的状态反而看不见 */}
+        <span className={'dot' + (panelMode === 'paused' ? ' paused' : panelMode === 'readonly' ? ' readonly' : '')}
+          role="img" aria-label={'记忆模式：' + (panelMode === 'readwrite' ? '记录中' : panelMode === 'readonly' ? '只看不记' : '已关闭')} />
         <span className="primary">{(inject?.shown.length ?? 0)} 条进入上下文</span>
         <span className="sep" />
         <span>{fmtB(used)} / {fmtB(budget)}</span>
         <span className="sep" />
         <span className={state !== null && state.pending > 0 ? 'warn-txt' : ''}>{state?.pending ?? 0} 条待确认</span>
-        <span className="expand">▾</span>
+        {/* 误写提示挪到这里，只占文字不抢圆点 */}
+        {(state?.noise?.count ?? 0) > 0 && <span className="warn-txt">· {state?.noise?.count} 条疑似误写</span>}
       </div>
       )}
 
       {open && (
         <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) setOpen(false) }}>
-          <div className="panel" onClick={(e) => e.stopPropagation()}>
-            <div className="panel-header">
-              <div className="panel-title">记忆</div>
-              <button className="close-btn" title="关闭 (Esc)" onClick={() => setOpen(false)}>✕</button>
-            </div>
-
-            {/* 模式 + 预算 */}
+          <div className="panel" id="nx-b-panel" role="dialog" aria-modal="true" aria-label="记忆" onClick={(e) => e.stopPropagation()}>
+            {/* 标题行删除（专家实测 54px）：宿主设置弹窗自带标题、状态条常驻，再写一遍"记忆"是三重冗余。
+                ✕ 降级成模式行行尾的小图标（20×20）。 */}
             <div className="mode-budget-row">
               <div className="mode-group">
                 <button className={'mode-btn' + (panelMode === 'readwrite' ? ' active' : '')} data-mode="readwrite" title="记录新记忆，并注入已有记忆" onClick={() => void setMode('readwrite')}>记录中</button>
@@ -340,7 +381,7 @@ export function BPanel(): React.ReactNode {
               <div className="budget-mini">
                 <div className="budget-mini-top">
                   <strong>{fmtB(used)} / {fmtB(budget)}</strong>
-                  <span style={{ color: 'var(--text-3)', fontSize: 11 }}>{(inject?.shown.length ?? 0)} 进入 · {(inject?.dropped.length ?? 0)} 未进入</span>
+                  <span className="budget-mini-counts">进 {(inject?.shown.length ?? 0)} · 出 {(inject?.dropped.length ?? 0)}</span>
                 </div>
                 <div className="budget-mini-bar">
                   <div className="seg" data-scope="global" style={{ flexGrow: scopeCounts.user / scopeTotal }} />
@@ -348,22 +389,16 @@ export function BPanel(): React.ReactNode {
                   <div className="seg" data-scope="session" style={{ flexGrow: scopeCounts.episode / scopeTotal }} />
                 </div>
               </div>
+              <button className="close-btn" title="关闭 (Esc)" aria-label="关闭记忆面板" onClick={() => setOpen(false)}>✕</button>
             </div>
 
             {/* 统计行 */}
-            <div className="stats-row">
-              <div className="stat"><div className="num">{stats.today}</div><div className="lbl">今日写入</div></div>
-              <div className="stat"><div className="num orange">{stats.pending}</div><div className="lbl">待确认</div></div>
-              <div className="stat"><div className="num dim">{stats.rejected}</div><div className="lbl">已拒收</div></div>
-              <div className="stat"><div className="num green">{stats.injections}</div><div className="lbl">注入次数</div></div>
-            </div>
-
             {/* 标签页 */}
-            <div className="tabs">
-              <button className={'tab' + (tab === 'attribution' ? ' active' : '')} onClick={() => setTab('attribution')}>归因 <span className="badge">{inject?.shown.length ?? 0}</span></button>
-              <button className={'tab' + (tab === 'library' ? ' active' : '')} onClick={() => setTab('library')}>记忆库 <span className="badge">{total}</span></button>
-              <button className={'tab' + (tab === 'trash' ? ' active' : '')} onClick={() => setTab('trash')}>回收站 <span className={'badge' + (trashItems.length > 0 ? ' warn' : '')}>{trashItems.length}</span></button>
-              <button className={'tab' + (tab === 'settings' ? ' active' : '')} onClick={() => setTab('settings')}>设置</button>
+            <div className="tabs" role="tablist" aria-label="记忆视图">
+              <button role="tab" aria-selected={tab === 'attribution'} className={'tab' + (tab === 'attribution' ? ' active' : '')} onClick={() => setTab('attribution')}>归因 <span className="badge">{inject?.shown.length ?? 0}</span></button>
+              <button role="tab" aria-selected={tab === 'library'} className={'tab' + (tab === 'library' ? ' active' : '')} onClick={() => setTab('library')}>记忆库 <span className="badge">{total}</span></button>
+              <button role="tab" aria-selected={tab === 'trash'} className={'tab' + (tab === 'trash' ? ' active' : '')} onClick={() => setTab('trash')}>回收站 <span className={'badge' + (trashItems.length > 0 ? ' warn' : '')}>{trashItems.length}</span></button>
+              <button role="tab" aria-selected={tab === 'settings'} className={'tab' + (tab === 'settings' ? ' active' : '')} onClick={() => setTab('settings')}>设置</button>
             </div>
 
             <div className="panel-body">
@@ -378,7 +413,7 @@ export function BPanel(): React.ReactNode {
               {!loading && error === null && tab === 'attribution' && (
                 <>
                   {state?.noise !== undefined && state.noise.count > 0 && (
-                    <div className="banner">
+                    <div className="banner" role="status">
                       <div className="banner-text">检测到 <strong>{state.noise.count}</strong> 条疑似误写的记忆（子代理回执 / 系统提示词），会挤占注入预算。</div>
                       <button onClick={() => { setTab('library'); setLibFilter('subagent'); setQuery('') }}>查看</button>
                       <button onClick={() => {
@@ -389,12 +424,15 @@ export function BPanel(): React.ReactNode {
                     </div>
                   )}
 
-                  {dedupGroups.map((group) => (
+                  {groups.map((group) => (
                     <div className={'reason-group' + (collapsed.has(group.key) ? ' collapsed' : '')} key={group.key}>
-                      <div className="reason-header" onClick={() => setCollapsed((prev) => { const next = new Set(prev); if (next.has(group.key)) next.delete(group.key); else next.add(group.key); return next })}>
-                        <span className={'marker ' + group.marker} />
+                      <div className="reason-header" role="button" tabIndex={0} aria-expanded={!collapsed.has(group.key)}
+                        onClick={() => setCollapsed((prev) => { const next = new Set(prev); if (next.has(group.key)) next.delete(group.key); else next.add(group.key); return next })}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setCollapsed((prev) => { const next = new Set(prev); if (next.has(group.key)) next.delete(group.key); else next.add(group.key); return next }) } }}>
+                        <span className="caret" aria-hidden="true">▾</span>
+                        <span className={'marker ' + group.marker} aria-hidden="true" />
                         <span className="label">{group.label}</span>
-                        <span className="count">{group.count} 条{group.bytes > 0 ? ' · ' + fmtB(group.bytes) : ''}</span>
+                        <span className="count">{group.mix !== '' ? group.mix + ' · ' : ''}{group.count} 条{group.bytes > 0 ? ' · ' + fmtB(group.bytes) : ''}</span>
                       </div>
                       <div className="reason-body">
                         {group.cards.map((card) => {
@@ -407,10 +445,12 @@ export function BPanel(): React.ReactNode {
                                   <Highlight text={card.statement.slice(0, 120)} term={query.trim()} />
                                 </div>
                                 <span className={'mem-card-size' + (share >= 0.3 ? ' over' : '')}>{fmtB(card.bytes)}</span>
-                                <button className="mem-card-more" title="更多操作" onClick={() => setMenu({ id: card.id, x: 40, y: 120 })}>⋯</button>
+                                <button className="mem-card-more" aria-label={'更多操作：' + card.statement.slice(0, 20)} onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ id: card.id, x: Math.min(r.right - 168, window.innerWidth - 176), y: r.bottom + 4 }) }}>⋯</button>
                               </div>
                               <div className="mem-card-meta">
-                                <span className={'conf-dot ' + confLevel(card.confidence)} />
+                                {card.confidence !== undefined
+                                  ? <span className={'conf-dot ' + confLevel(card.confidence)} role="img" aria-label={'置信度 ' + Math.round(card.confidence * 100) + '%'} />
+                                  : <span className="conf-dot unknown" role="img" aria-label="置信度未标注" />}
                                 {SOURCE_WORD[sourceOf(card)] ?? '来源未标注'}
                                 {card.confidence !== undefined && <> <span className="sep-dot">·</span> {card.confidence.toFixed(2)}</>}
                                 <span className="sep-dot">·</span> {SCOPE_WORD[card.scope] ?? card.scope}
@@ -428,7 +468,7 @@ export function BPanel(): React.ReactNode {
                     </div>
                   ))}
 
-                  {dedupGroups.length === 0 && <div className="empty-hint">还没有记忆进入过上下文<div className="sub">在会话里说「记住：…」试试</div></div>}
+                  {groups.length === 0 && <div className="empty-hint">还没有记忆进入过上下文<div className="sub">在会话里说「记住：…」试试</div></div>}
                 </>
               )}
 
@@ -473,10 +513,12 @@ export function BPanel(): React.ReactNode {
                           checked={selected.has(item.id)}
                           onChange={(e) => toggleCheck(item.id, (e.nativeEvent as MouseEvent).shiftKey === true)}
                         />
-                        <div className="lib-item-body" onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}>
+                        <div className="lib-item-body" role="button" tabIndex={0} aria-expanded={expandedId === item.id}
+                          onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(expandedId === item.id ? null : item.id) } }}>
                           <div className="lib-item-title"><Highlight text={item.statement.slice(0, 140)} term={query.trim()} /></div>
                           <div className="lib-item-sub">
-                            <span className={'status-dot ' + (item.status === 'active' ? 'active' : item.status === 'pending' ? 'pending' : item.status === 'needs-review' ? 'conflict' : 'archived')} />
+                            <span className={'status-dot ' + (item.status === 'active' ? 'active' : item.status === 'pending' ? 'pending' : item.status === 'needs-review' ? 'conflict' : 'archived')} aria-hidden="true" />
                             {STATUS_WORD[item.status] ?? item.status}
                             <span className="sep-dot">·</span> {SOURCE_WORD[item.provenance ?? ''] ?? '来源未标注'}
                             <span className="sep-dot">·</span> {SCOPE_WORD[item.scope] ?? item.scope}
@@ -498,7 +540,7 @@ export function BPanel(): React.ReactNode {
                           )}
                         </div>
                         <span className="lib-item-size">{item.injectBytes !== undefined ? fmtB(item.injectBytes) : ''}</span>
-                        <button className="lib-item-more" title="更多操作" onClick={() => setMenu({ id: item.id, x: 80, y: 140 })}>⋯</button>
+                        <button className="lib-item-more" aria-label={'更多操作：' + item.statement.slice(0, 20)} onClick={(e) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ id: item.id, x: Math.min(r.right - 168, window.innerWidth - 176), y: r.bottom + 4 }) }}>⋯</button>
                       </div>
                     ))}
                     {library.length === 0 && <div className="empty-hint">没有匹配的记忆<div className="sub">试试放宽筛选或搜索词</div></div>}
@@ -511,9 +553,12 @@ export function BPanel(): React.ReactNode {
                 <>
                   <div className="trash-toolbar">
                     <span className="trash-count">共 <strong>{trashItems.length}</strong> 条已归档（可恢复）</span>
-                    {trashItems.length > 0 && (
-                      <button className="btn-empty-trash" onClick={() => void run('/nexus/api/memory/purge', { ids: trashItems.map((i) => i.id) }, '已彻底清除 ' + String(trashItems.length) + ' 条（不可恢复）')}>彻底清空</button>
-                    )}
+                    {trashItems.length > 0 && (emptyConfirm
+                      ? <>
+                          <button className="mini-btn" onClick={() => setEmptyConfirm(false)}>取消</button>
+                          <button className="btn-empty-trash" onClick={() => { setEmptyConfirm(false); void run('/nexus/api/memory/purge', { ids: trashItems.map((i) => i.id) }, '已彻底清除 ' + String(trashItems.length) + ' 条（不可恢复）') }}>确认清除 {trashItems.length} 条？</button>
+                        </>
+                      : <button className="btn-empty-trash" onClick={() => setEmptyConfirm(true)}>彻底清空</button>)}
                   </div>
                   <div className="lib-list">
                     {trashItems.map((item) => (
@@ -564,6 +609,13 @@ export function BPanel(): React.ReactNode {
 
                   <div className="settings-section">
                     <div className="settings-title">运行状态</div>
+                    {/* 今日统计从面板顶部搬到这里：原来 4 个数字占 30–64px，其中三项与状态条/本块重复 */}
+                    <div className="doctor-block" style={{ marginBottom: 6 }}>
+                      <div className="row"><span className="dim">今日写入</span><span>{stats.today}</span></div>
+                      <div className="row"><span className="dim">待确认</span><span>{stats.pending}</span></div>
+                      <div className="row"><span className="dim">已拒收</span><span>{stats.rejected}</span></div>
+                      <div className="row"><span className="dim">注入次数</span><span>{stats.injections}</span></div>
+                    </div>
                     <div className="doctor-block">
                       <div className="row"><span className="dim">注入预算</span><span>{fmtB(budget)}</span></div>
                       <div className="row"><span className="dim">本次占用</span><span>{fmtB(used)}（{pct}%）</span></div>
@@ -604,16 +656,16 @@ export function BPanel(): React.ReactNode {
 
       {/* ⋯ 操作菜单（B 的 menu-popup） */}
       {menu !== null && createPortal(
-        <div className="menu-popup show" style={{ left: Math.min(menu.x, Math.max(8, window.innerWidth - 180)), top: Math.min(menu.y, Math.max(8, window.innerHeight - 260)) }} onClick={() => setMenu(null)}>
-          <div className="menu-item" onClick={() => { const item = items.find((i) => i.id === menu.id); if (item !== undefined) void openEdit(item) }}>✏️ 编辑记忆</div>
-          <div className="menu-item" onClick={() => { void navigator.clipboard?.writeText(menu.id); showToast('记忆 ID 已复制') }}>📋 复制 ID</div>
-          <div className="menu-item" onClick={() => { void openRelated(menu.id) }}>🔗 关联记忆</div>
+        <div className="menu-popup show" data-nxb-menu="true" role="menu" style={{ left: Math.min(Math.max(8, menu.x), Math.max(8, window.innerWidth - 180)), top: Math.min(Math.max(8, menu.y), Math.max(8, window.innerHeight - 260)) }}>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => { const item = items.find((i) => i.id === menu.id); setMenu(null); if (item !== undefined) void openEdit(item) }}>✏️ 编辑记忆</button>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void navigator.clipboard?.writeText(menu.id); showToast('记忆 ID 已复制') }}>📋 复制 ID</button>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => { void openRelated(menu.id) }}>🔗 关联记忆</button>
           <div className="menu-divider" />
-          <div className="menu-item" onClick={() => { void run('/nexus/api/memory/pin', { id: menu.id, pinned: true }, '已置顶（下次注入优先）') }}>📌 置顶</div>
-          <div className="menu-item danger" onClick={() => { void run('/nexus/api/memory/reject', { ids: [menu.id] }, '已归档（同句不再自动记住）') }}>📦 归档</div>
-          <div className="menu-item danger" onClick={() => { void run('/nexus/api/memory/delete', { ids: [menu.id] }, '已移入回收站（可恢复）') }}>🗑️ 移入回收站</div>
+          <button type="button" role="menuitem" className="menu-item" onClick={() => { setMenu(null); void run('/nexus/api/memory/pin', { id: menu.id, pinned: true }, '已置顶（下次注入优先）') }}>📌 置顶</button>
+          <button type="button" role="menuitem" className="menu-item danger" onClick={() => { setMenu(null); void run('/nexus/api/memory/reject', { ids: [menu.id] }, '已归档（同句不再继承自动记住）') }}>📦 归档</button>
+          <button type="button" role="menuitem" className="menu-item danger" onClick={() => { setMenu(null); void run('/nexus/api/memory/delete', { ids: [menu.id] }, '已移入回收站（可恢复）') }}>🗑️ 移入回收站</button>
         </div>,
-        document.body,
+        rootRef.current ?? document.body,
       )}
 
       {/* 编辑 */}
@@ -648,7 +700,7 @@ export function BPanel(): React.ReactNode {
             </div>
           </div>
         </div>,
-        document.body,
+        rootRef.current ?? document.body,
       )}
 
       {/* 新增 */}
@@ -691,7 +743,7 @@ export function BPanel(): React.ReactNode {
             </div>
           </div>
         </div>,
-        document.body,
+        rootRef.current ?? document.body,
       )}
 
       {/* 关联 */}
@@ -725,11 +777,11 @@ export function BPanel(): React.ReactNode {
             </div>
           </div>
         </div>,
-        document.body,
+        rootRef.current ?? document.body,
       )}
 
       {/* Toast */}
-      <div className={'toast' + (toast !== null ? ' show' : '')}>
+      <div className={'toast' + (toast !== null ? ' show' : '')} role="status" aria-live="polite">
         <span>{toast?.text ?? ''}</span>
         {toast?.undo !== undefined && <button className="undo" onClick={() => { const undo = toast.undo; setToast(null); undo?.() }}>撤销</button>}
       </div>

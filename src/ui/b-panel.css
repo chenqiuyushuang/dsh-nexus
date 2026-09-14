@@ -13,11 +13,14 @@
   --bg-hover: #1F1F24;
   --bg-input: #16161A;
   --bg-active: #23232A;
-  --border: #26262C;
-  --border-soft: #1F1F24;
+  /* 原 #26262C 对卡片只有 1.15:1 —— 卡片因此没有形体；用宿主的 rgba(255,255,255,.12) */
+  --border: rgba(255, 255, 255, 0.12);
+  --border-soft: rgba(255, 255, 255, 0.07);
   --text: #E8E8EC;
   --text-2: #9494A0;
-  --text-3: #5E5E6A;
+  /* 三级文字原样是 B 的 #5E5E6A，但它在面板底上只有 2.90:1（正文要 ≥4.5）——
+     大量 11–12px 的辅助信息（时间/条数/来源）都用它。提到 #868692：面板 5.16 / 卡片 4.82 / 页底 5.50。 */
+  --text-3: #9096A2;
   --green: #10B981;
   --green-bg: rgba(16, 185, 129, 0.08);
   --orange: #F59E0B;
@@ -25,25 +28,35 @@
   --red: #EF4444;
   --red-bg: rgba(239, 68, 68, 0.08);
   --blue: #3B82F6;
+  /* 白字按钮要 ≥4.5:1：#3B82F6 只有 3.68:1，蓝-600 是 5.17:1 */
+  --blue-strong: #2563EB;
   --blue-bg: rgba(59, 130, 246, 0.1);
   --radius: 8px;
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
-  font-size: 13px;
+  font-size: var(--nx-content-font-size, 13px);
+  font-variant-numeric: tabular-nums;
   min-height: 100%;
 }
 .nx-b *, .nx-b *::before, .nx-b *::after { box-sizing: border-box; }
 
-.nx-b .panel { width: 100%; max-width: 420px; max-height: 92vh; display: flex; flex-direction: column;
+/* 原型 B 的 .overlay 规则在移植时整段丢了（只有 _shots/b-panel-scoped-auto.css 那份旧备份里有），
+   后果：面板退回普通流块、「点面板外关闭」成死代码、状态条 + 92vh 导致 7px 文档溢出 + 两条滚动条。
+   这里补回来，并把 max-height 改成"可用高"（用 --nx-b-available 由 JS 按宿主视口写入，回退 92vh）。 */
+.nx-b .overlay { position: fixed; inset: 0; display: flex; align-items: flex-start; justify-content: center;
+  padding: 8px; background: rgba(0, 0, 0, 0.55); z-index: 40; }
+.nx-b .panel { width: 100%; max-width: 420px; max-height: min(92vh, calc(var(--nx-b-available, 100vh) - 16px)); display: flex; flex-direction: column;
   background: var(--bg-panel); border: 1px solid var(--border); border-radius: 12px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); overflow: hidden; }
 .nx-b .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); flex: none; }
 .nx-b .panel-title { font-size: 15px; font-weight: 600; }
 .nx-b .panel-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 14px 16px; }
 .nx-b .panel-body::-webkit-scrollbar { width: 6px; }
-.nx-b .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-.nx-b .close-btn { background: transparent; border: 0; color: var(--text-2); font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 6px; font-family: inherit; }
+.nx-b .panel-body::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 3px; }
+.nx-b :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.nx-b .close-btn { background: transparent; border: 0; color: var(--text-2); font-size: 16px; cursor: pointer;
+  padding: 2px 6px; border-radius: 6px; font-family: inherit; flex: none; margin-left: auto; align-self: center; }
 .nx-b .close-btn:hover { background: var(--bg-hover); color: var(--text); }
 
 /* 顶部状态条 */
@@ -69,25 +82,24 @@
 .nx-b .mode-btn.active { background: var(--blue-bg); color: var(--blue); font-weight: 600; }
 .nx-b .mode-btn.active[data-mode="readonly"] { background: var(--bg-active); color: var(--text-2); }
 .nx-b .mode-btn.active[data-mode="paused"] { background: var(--red-bg); color: var(--red); }
-.nx-b .budget-mini { flex: 1 1 150px; min-width: 0; }
+.nx-b .budget-mini { flex: 1 1 120px; min-width: 0; }
 .nx-b .budget-mini-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 4px; }
-.nx-b .budget-mini-top strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.nx-b .budget-mini-top strong { color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nx-b .budget-mini-counts { color: var(--text-3); font-size: 11px; white-space: nowrap; }
 .nx-b .budget-mini-bar { display: flex; height: 5px; border-radius: 3px; overflow: hidden; background: var(--bg-active); }
 .nx-b .budget-mini-bar .seg { height: 100%; flex-grow: 1; flex-basis: 0; }
 .nx-b .budget-mini-bar .seg[data-scope="global"] { background: var(--blue); }
 .nx-b .budget-mini-bar .seg[data-scope="project"] { background: var(--green); }
 .nx-b .budget-mini-bar .seg[data-scope="session"] { background: var(--orange); }
 
-/* 统计行 */
-.nx-b .stats-row { display: flex; border-bottom: 1px solid var(--border); flex: none; flex-wrap: wrap; }
-.nx-b .stat { flex: 1 1 0; min-width: 64px; padding: 9px 8px; text-align: center; }
-.nx-b .stat:hover { background: var(--bg-hover); }
-.nx-b .stat + .stat { border-left: 1px solid var(--border); }
-.nx-b .stat .num { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.nx-b .stat .num.green { color: var(--green); }
-.nx-b .stat .num.orange { color: var(--orange); }
-.nx-b .stat .num.dim { color: var(--text-2); }
-.nx-b .stat .lbl { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+/* 统计行：单行 chip（窄栏实测双行卡占 64px，改单行约 30px ≈ 多半张记忆卡） */
+.nx-b .stats-row { display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap;
+  padding: 8px 16px; border-bottom: 1px solid var(--border); flex: none; }
+.nx-b .stat-inline { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.nx-b .stat-inline b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 3px; }
+.nx-b .stat-inline b.green { color: var(--green); }
+.nx-b .stat-inline b.orange { color: var(--orange); }
+.nx-b .stat-inline b.dim { color: var(--text-2); }
 
 /* 标签页 */
 .nx-b .tabs { display: flex; border-bottom: 1px solid var(--border); flex: none; }
@@ -111,8 +123,12 @@
 .nx-b .banner button:hover { border-color: var(--orange); color: var(--orange); }
 
 /* 归因分组 */
-.nx-b .reason-group { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; overflow: hidden; background: var(--bg-card); }
-.nx-b .reason-header { display: flex; align-items: center; gap: 8px; padding: 9px 11px; cursor: pointer; font-size: 12.5px; }
+.nx-b .reason-group { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; overflow: hidden; background: var(--bg-panel); }
+/* 组头原来是 12.5px/400 与卡片正文同色同重，唯一区分是 1.07:1 的底色 —— 分组看不出来。
+   现在做成标题带：加重 + 次级色 + 底色差。 */
+.nx-b .reason-header { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--text-2); background: var(--bg-active); }
+.nx-b .reason-header:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .nx-b .reason-header:hover { background: var(--bg-hover); }
 .nx-b .reason-header .caret { color: var(--text-3); font-size: 10px; transition: transform .18s; }
 .nx-b .reason-group.collapsed .reason-header .caret { transform: rotate(-90deg); }
@@ -126,7 +142,9 @@
 .nx-b .reason-body { border-top: 1px solid var(--border); padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 
 /* 记忆卡 */
-.nx-b .mem-card { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 6px; padding: 9px 11px; }
+/* 卡片回到比容器更亮的一档（原来 card 用 --bg-panel 比容器 --bg-card 更暗，看着像凹陷） */
+.nx-b .mem-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+.nx-b .mem-card-title { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .nx-b .mem-card:hover { border-color: var(--text-3); }
 .nx-b .mem-card.pinned { border-left: 2px solid var(--orange); }
 .nx-b .mem-card.selected { border-color: var(--blue); background: var(--blue-bg); }
@@ -144,8 +162,10 @@
 .nx-b .mem-card-why { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11.5px; }
 .nx-b .mem-card-why .why-text { flex: 1 1 auto; color: var(--text-3); }
 .nx-b .mem-card-why .why-text.warn { color: var(--orange); }
-.nx-b .mem-card-more { background: transparent; border: 0; color: var(--text-3); cursor: pointer; font-size: 14px; padding: 0 4px; opacity: 0; transition: opacity .12s; font-family: inherit; }
-.nx-b .mem-card:hover .mem-card-more { opacity: 1; }
+/* ⋯ 常显（原 opacity:0 只有 hover 才出现 → 触屏/键盘进不去，而它是归因卡上唯一的操作入口） */
+.nx-b .mem-card-more { background: transparent; border: 0; color: var(--text-3); cursor: pointer; font-size: 14px;
+  padding: 4px 7px; border-radius: 5px; opacity: .55; transition: opacity .12s, background .12s; font-family: inherit; }
+.nx-b .mem-card:hover .mem-card-more, .nx-b .mem-card-more:focus-visible { opacity: 1; background: var(--bg-hover); }
 .nx-b .mem-card-more:hover { color: var(--text); }
 
 .nx-b .mini-btn { background: transparent; border: 1px solid var(--border); color: var(--text-2); border-radius: 5px; font: inherit; font-size: 11.5px; padding: 2px 8px; cursor: pointer; }
@@ -172,7 +192,7 @@
 .nx-b .lib-search::placeholder { color: var(--text-3); }
 .nx-b .lib-select { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-2); border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; }
 .nx-b .lib-select:focus { outline: none; border-color: var(--blue); }
-.nx-b .btn-add-new { background: var(--blue); border: 0; color: #fff; border-radius: 6px; font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 12px; cursor: pointer; flex: none; }
+.nx-b .btn-add-new { background: var(--blue-strong); border: 0; color: #fff; border-radius: 6px; font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 12px; cursor: pointer; flex: none; }
 .nx-b .btn-add-new:hover { filter: brightness(1.08); }
 
 /* 批量栏 */
@@ -204,8 +224,9 @@
 .nx-b .lib-item-sub .status-dot.conflict { background: var(--red); }
 .nx-b .lib-item-sub .sep-dot { opacity: .6; }
 .nx-b .lib-item-size { flex: none; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
-.nx-b .lib-item-more { background: transparent; border: 0; color: var(--text-3); cursor: pointer; font-size: 14px; padding: 0 4px; opacity: 0; transition: opacity .12s; font-family: inherit; }
-.nx-b .lib-item:hover .lib-item-more { opacity: 1; }
+.nx-b .lib-item-more { background: transparent; border: 0; color: var(--text-3); cursor: pointer; font-size: 14px;
+  padding: 4px 7px; border-radius: 5px; opacity: .55; transition: opacity .12s, background .12s; font-family: inherit; }
+.nx-b .lib-item:hover .lib-item-more, .nx-b .lib-item-more:focus-visible { opacity: 1; background: var(--bg-hover); }
 .nx-b .lib-item-more:hover { color: var(--text); }
 
 /* 回收站 */
@@ -264,7 +285,8 @@
 /* ⋯ 菜单 */
 .nx-b .menu-popup { position: fixed; z-index: 60; min-width: 160px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 16px 40px rgba(0, 0, 0, .6); padding: 5px; display: none; }
 .nx-b .menu-popup.show { display: block; }
-.nx-b .menu-item { padding: 7px 10px; font-size: 12.5px; color: var(--text); border-radius: 5px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.nx-b .menu-item { padding: 7px 10px; font-size: 12.5px; color: var(--text); border-radius: 5px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; background: transparent; border: 0; font-family: inherit; width: 100%; text-align: left; }
 .nx-b .menu-item:hover { background: var(--bg-hover); }
 .nx-b .menu-item.danger { color: var(--red); }
 .nx-b .menu-item.danger:hover { background: var(--red-bg); }
