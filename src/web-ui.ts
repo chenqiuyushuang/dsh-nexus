@@ -48,6 +48,8 @@ function toMemoryListItem(atom: Atom): Record<string, unknown> {
     ...(atom.reviewNote !== undefined ? { reviewNote: atom.reviewNote } : {}),
     createdAt: atom.createdAt,
     updatedAt: atom.updatedAt,
+    /** 来源（面板 B 的"用户明文 / 模型推断 / 子代理整理"三分法要用）。 */
+    provenance: atom.provenance,
   };
 }
 
@@ -56,7 +58,12 @@ declare interface NexusWebServer {
 }
 
 /** 安装 /nexus 路由（host 无 webServer 时安全跳过）。 */
-export function installNexusWeb(ctx: Context, facility: NexusFacility, options: { readonly allowRemote?: boolean; readonly indexBudgetBytes?: number } = {}): void {
+export function installNexusWeb(ctx: Context, facility: NexusFacility, options: {
+  readonly allowRemote?: boolean
+  readonly indexBudgetBytes?: number
+  /** 会话语义模式（面板 B 的 记录中/只看不记/已关闭 改的就是它）。 */
+  readonly modes?: { global(): 'read-write' | 'write-only' | 'pause'; setGlobal(mode: 'read-write' | 'write-only' | 'pause'): void }
+} = {}): void {
   const webServer = ctx.get('webServer') as NexusWebServer | undefined;
   if (webServer === undefined) {
     console.warn("nexus: webServer 不可用，/nexus 面板跳过（功能不受影响）");
@@ -113,6 +120,24 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
         counts: truth.counts,
         archived: truth.archived,
       },
+      // 面板 B：全局模式（记录中 / 只看不记 / 已关闭）+ 来源分布（用户明文 / 别处）
+      mode: options.modes?.global() ?? 'read-write',
+      sourceCounts: {
+        user: active.filter(a => a.provenance === 'user-declared').length,
+        model: active.filter(a => a.provenance === 'model-inferred').length,
+        agent: active.filter(a => a.provenance === 'agent-curated').length,
+      },
+      /** 今日统计（面板 B 的统计行：写入 / 待确认 / 拒收 / 注入次数）。 */
+      stats: (() => {
+        const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0)
+        const since = dayStart.getTime()
+        return {
+          today: all.filter(a => a.createdAt >= since).length,
+          pending: all.filter(a => a.status === 'pending').length,
+          rejected: [...store.rejectEntries()].filter(([, r]) => r.at >= since).length,
+          injections: [...store.recallEntries()].filter(([, r]) => r.at >= since).length,
+        }
+      })(),
       cost: summarizeCosts(store),
       degraded: shouldAutoDegrade(store, 7),
       lastSummary: store.getState().lastSummary,
@@ -316,6 +341,22 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     await facility.touch();
     sendJson(res, 200, { restored, skipped });
   });
+  // 面板 B：会话模式切换（记录中 / 只看不记 / 已关闭）——立即生效、落盘、下次启动仍生效
+  route("/nexus/api/mode", async (req, res) => {
+    if (!guardWrite(req, res)) return;
+    const body = await readJson(req) as { mode?: unknown };
+    const raw = body?.mode;
+    if (raw !== 'readwrite' && raw !== 'readonly' && raw !== 'paused') {
+      sendJson(res, 400, { error: "mode 需为 readwrite | readonly | paused" });
+      return;
+    }
+    const session = raw === 'readwrite' ? 'read-write' : raw === 'readonly' ? 'write-only' : 'pause';
+    options.modes?.setGlobal(session);
+    const store = await facility.store();
+    await store.patchState({ panelMode: raw });
+    sendJson(res, 200, { ok: true, mode: raw });
+  });
+
   route("/nexus/api/settings", async (_req, res) => {
     const store = await facility.store();
     const thresholds = await facility.getEffectiveThresholds();

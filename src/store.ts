@@ -47,6 +47,11 @@ export const nexusStateSchema = zod.object({
     modelAutoThreshold: zod.number().min(0).max(1).optional(),
   }).optional(),
   extractorLlm: zod.object({ provider: zod.string().min(1), model: zod.string().min(1) }).optional(),
+  /**
+   * 面板模式（面板 B 的三个按钮：记录中 / 只看不记 / 已关闭）。
+   * 全局默认值；会话级覆盖（/memory session）优先级更高。
+   */
+  panelMode: zod.union([zod.literal('readwrite'), zod.literal('readonly'), zod.literal('paused')]).optional(),
 })
 
 /**
@@ -189,6 +194,10 @@ export class MemoryStore {
   // ---- state ----
   getState(): NexusState { return this.tables.state.get() }
   async setState(next: NexusState): Promise<void> { await this.tables.state.set(next) }
+  /** 局部更新全局状态槽（读-改-写；面板的模式开关等单字段写入用它，避免调用方拼整个 state）。 */
+  async patchState(patch: Partial<NexusState>): Promise<void> {
+    await this.tables.state.set({ ...this.tables.state.get(), ...patch })
+  }
 
   // ---- lifecycle ----
   async close(): Promise<void> { await this.tables.close() }

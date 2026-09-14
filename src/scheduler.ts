@@ -43,12 +43,28 @@ type NexusMemoryProjection = zod.infer<typeof nexusProjectionSchema>
 /** Session memory modes (toggled by /memory session; default follows global). */
 export type SessionMode = 'read-write' | 'write-only' | 'pause'
 
+/** 面板 B 的三个按钮值 ↔ 内部会话模式。 */
+export type PanelMode = 'readwrite' | 'readonly' | 'paused'
+export function panelToSessionMode(mode: PanelMode): SessionMode {
+  return mode === 'readwrite' ? 'read-write' : mode === 'readonly' ? 'write-only' : 'pause'
+}
+export function sessionToPanelMode(mode: SessionMode): PanelMode {
+  return mode === 'read-write' ? 'readwrite' : mode === 'write-only' ? 'readonly' : 'paused'
+}
+
 export class SessionModeControl {
   private readonly overrides = new Map<string, SessionMode>()
   constructor(private readonly globalDefault: SessionMode = 'read-write') {}
-  get(sessionId: string): SessionMode { return this.overrides.get(sessionId) ?? this.globalDefault }
+  /**
+   * 全局模式（面板 B 的「记录中 / 只看不记 / 已关闭」按钮）。
+   * 会话级覆盖优先——/memory session 设过就听会话的，否则听全局。
+   */
+  private globalMode?: SessionMode
+  get(sessionId: string): SessionMode { return this.overrides.get(sessionId) ?? this.globalMode ?? this.globalDefault }
   set(sessionId: string, mode: SessionMode): void { this.overrides.set(sessionId, mode) }
   clear(sessionId: string): void { this.overrides.delete(sessionId) }
+  setGlobal(mode: SessionMode): void { this.globalMode = mode }
+  global(): SessionMode { return this.globalMode ?? this.globalDefault }
 }
 
 interface CaptureBuffer {
@@ -146,6 +162,11 @@ function textOfUser(eventData: unknown): string | undefined {
 export function installScheduler(ctx: Context, facility: NexusFacility, config: ResolvedConfig): SessionModeControl {
   const buffers = new Map<string, CaptureBuffer>()
   const modes = new SessionModeControl('read-write')
+  // 启动时把落盘的全局模式读回来（面板 B 的按钮改的就是它）
+  void facility.store().then((s) => {
+    const saved = s.getState().panelMode
+    if (saved === 'readonly' || saved === 'paused' || saved === 'readwrite') modes.setGlobal(panelToSessionMode(saved))
+  }).catch(() => { /* 读不到就用默认 */ })
   const fallbackState = new Map<string, NexusMemoryProjection>()
   /** 会话级注入书签：内容指纹 + 轮次 + 时间（修「每 15s 重复注入」）。 */
   const injectMarkers = new Map<string, { turn: number; at: number; fp: string }>()

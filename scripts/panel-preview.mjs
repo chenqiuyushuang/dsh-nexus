@@ -25,7 +25,7 @@ const resize = fixedHost
   ? ''
   : 'var f=document.getElementById("f");f.style.height=Math.min(e.data.height,620)+"px";'
 const harness = '<!doctype html><html><head><meta charset="utf-8"><style>html{font-size:' + font + 'px}html,body{margin:0;background:#111}iframe{border:0;display:block}</style></head><body' + (dark ? ' data-ds-dark-theme' : '') + '>' +
-  '<iframe id="f" src="/nexus' + (process.argv.includes('--replica') ? '?panel=sample' : '') + '" style="width:' + String(width) + 'px;height:' + String(height) + 'px"></iframe>' +
+  '<iframe id="f" src="/nexus' + (process.argv.includes('--b') ? '?panel=b' : process.argv.includes('--replica') ? '?panel=sample' : '') + '" style="width:' + String(width) + 'px;height:' + String(height) + 'px"></iframe>' +
   '<script>window.addEventListener("message",function(e){if(e.data&&e.data.type==="nexus-height"){window.__panelHeight=e.data.height;' + resize + '}})<\/script></body></html>'
 const port = Number(arg('port', '9336'))
 const profile = fileURLToPath(new URL('../_shots/chrome-profile/', import.meta.url))
@@ -104,6 +104,18 @@ try {
   // 场景：右键菜单（在第二行上派发 contextmenu）
   if (process.argv.includes('--ctx')) {
     await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const row = doc.querySelectorAll(".nx-row")[1]; if (!row) return false; const r = row.getBoundingClientRect(); row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: Math.round(r.left + 20), clientY: Math.round(r.top + 16) })); return true })()' })
+    await new Promise((r) => setTimeout(r, 700))
+  }
+  // 场景：面板 B —— 点开顶部状态条（必须先开面板，再点标签页）
+  if (process.argv.includes('--b-open')) {
+    await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const strip = doc.querySelector(".status-strip"); if (strip) strip.click(); return !!strip })()' })
+    await new Promise((r) => setTimeout(r, 900))
+  }
+  // 场景：面板 B 的某个标签页（--b-tab library|trash|settings）
+  const bTab = arg('b-tab', '')
+  if (process.argv.includes('--b-open') && bTab !== '') {
+    const label = bTab === 'library' ? '记忆库' : bTab === 'trash' ? '回收站' : bTab === 'settings' ? '设置' : '归因'
+    await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const btn = [...doc.querySelectorAll(".tab")].find((b) => (b.textContent || "").indexOf(' + JSON.stringify(label) + ') >= 0); if (btn) btn.click(); return !!btn })()' })
     await new Promise((r) => setTimeout(r, 700))
   }
   // 场景：参考稿绝对尺寸档（对照用；由面板 CSS 的 .reference-scale 类驱动）

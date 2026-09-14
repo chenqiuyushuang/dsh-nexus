@@ -279,7 +279,10 @@ describe('B2 分页与列表投影', () => {
     // 「记忆＝预算」：列表项要带上它进注入块占的字节，且与运行时 renderIndexLine 同源
     expect(item.injectBytes).toBe(Buffer.byteLength(renderIndexLine(store.getAtom('nex_long00000000001' as never)!), 'utf8'))
     expect(item.fp).toBeUndefined()
-    expect(item.provenance).toBeUndefined()
+    // 来源要进投影：面板 B 靠它区分「用户明文 / 模型推断 / 子代理整理」（mk 造的是 user-declared）
+    expect(item.provenance).toBe('user-declared')
+    // 大字段仍然不回（cues/sources/fp/provenance 里的 sources 才是体积大头）
+    expect(item.sources).toBeUndefined()
     // 编辑前取全文：拿到的必须是完整内容，否则保存会把后面 600 字删掉
     const full = JSON.parse((await call('/nexus/api/memory/get?id=nex_long00000000001', READ)).body)
     expect(full.statement).toHaveLength(1000)

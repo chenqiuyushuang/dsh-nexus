@@ -5,6 +5,7 @@
 import { createRoot } from 'react-dom/client'
 import { NexusPanel } from './NexusPanel.tsx'
 import { SamplePanel } from './SamplePanel.tsx'
+import { BPanel } from './BPanel.tsx'
 import { applyContentFontSize, fontSizeFromQuery, isDarkTheme, pickContentFontSize } from './theme.ts'
 
 // B7：主题跟随宿主（同源 iframe 读宿主的 data-ds-dark-theme，跨域回退系统偏好）
@@ -40,11 +41,13 @@ function applyHostFontSize(): void {
 }
 applyHostFontSize()
 
-// V0.7 复刻档对照入口：?panel=sample 用样例 1:1 复刻版，默认仍是旧面板。
-// 两边并存，确认复刻档没问题后再切默认、删旧组件。
+// 面板选择：默认 = 面板 B（用户附件第二版的移植，0.8 起的主力）。
+// ?panel=old 回旧面板（0.6 那套），?panel=sample 看样例复刻档 —— 三份并存，确认后再删。
 const container = document.getElementById('root')
-const useSample = new URLSearchParams(window.location.search).get('panel') === 'sample'
-if (container !== null) createRoot(container).render(useSample ? <SamplePanel /> : <NexusPanel />)
+const which = new URLSearchParams(window.location.search).get('panel')
+if (container !== null) {
+  createRoot(container).render(which === 'old' ? <NexusPanel /> : which === 'sample' ? <SamplePanel /> : <BPanel />)
+}
 
 // 嵌入 DSH 设置面板 iframe 时，把内容高度回传给宿主，让 iframe 自适应高度、
 // 自身不再产生滚动条（滚动统一交给外层设置面板，保持唯一滚动条）。

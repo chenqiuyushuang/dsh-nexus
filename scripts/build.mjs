@@ -54,6 +54,7 @@ await build({
 const theme = await readFile(new URL('../src/ui/theme.css', import.meta.url), 'utf8')
   + '\n' + await readFile(new URL('../src/ui/sample-palette.css', import.meta.url), 'utf8')
   + '\n' + await readFile(new URL('../src/ui/replica.css', import.meta.url), 'utf8')
+  + '\n' + await readFile(new URL('../src/ui/b-panel.css', import.meta.url), 'utf8')
 const uiJs = await readFile(new URL('../lib/nexus-ui.js', import.meta.url), 'utf8')
 const safeJs = uiJs.replace(/<\/script/gi, '<\\/script')
 const html = `<!DOCTYPE html>
