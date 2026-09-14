@@ -63,6 +63,22 @@ if (window.parent !== window) {
    * 当前 iframe 高度 → 面板只会「保持原样」，永远长不大（实测上报 448 = 当前高度）。
    */
   const desiredHeight = (): number => {
+    // 面板 B（默认档）用的是 .nx-b：没有 .nx-app/.nx-list，只有常驻状态条 + 面板内的 .panel-body。
+    // 不认它的话这个函数恒返回 168px，宿主只能拿 minHeight:480 兜底（专家实测 P1-7）。
+    const bRoot = document.querySelector('.nx-b')
+    if (bRoot !== null) {
+      const strip = bRoot.querySelector('.status-strip') as HTMLElement | null
+      const panel = bRoot.querySelector('.panel') as HTMLElement | null
+      if (panel === null) return Math.ceil((strip?.getBoundingClientRect().height ?? 44) + 8)
+      const body = bRoot.querySelector('.panel-body') as HTMLElement | null
+      const panelChrome = panel.getBoundingClientRect().height - (body?.getBoundingClientRect().height ?? 0)
+      // 内容区想要多高：最多 6 张卡的高度（写死数字会跟卡片高度脱节，这里按真实内容算）
+      const card = bRoot.querySelector('.mem-card') as HTMLElement | null
+      const want = card !== null ? card.getBoundingClientRect().height * 6 : 360
+      const scroll = body?.scrollHeight ?? 0
+      const bodyWant = Math.min(scroll, want)
+      return Math.ceil(panelChrome + Math.max(bodyWant, 200) + 16)
+    }
     const app = document.querySelector('.nx-app')
     const list = document.querySelector('.nx-list')
     let chrome = 0
@@ -91,6 +107,8 @@ if (window.parent !== window) {
     const data = event.data as { type?: unknown; height?: unknown } | null
     if (data?.type === 'nexus-viewport' && typeof data.height === 'number' && data.height > 0) {
       hostHeight = data.height
+      // 面板 B 的遮罩层用这个变量算可用高（比 92vh 更准：不受 iframe 当前高度影响）
+      document.documentElement.style.setProperty('--nx-b-available', String(data.height) + 'px')
       report()
     }
   })
