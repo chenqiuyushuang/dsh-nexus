@@ -99,7 +99,7 @@ if (window.parent !== window) {
   }
   const report = (): void => {
     // 宿主没告知可用高度时按 620 申请（面板自身会滚，宿主不认也不会更差）
-    const cap = hostHeight > 0 ? Math.min(620, Math.max(320, hostHeight - 24)) : 620
+    const cap = hostHeight > 0 ? Math.min(1000, Math.max(320, hostHeight - 16)) : 1000
     const height = Math.min(desiredHeight(), cap)
     window.parent.postMessage({ type: 'nexus-height', height }, '*')
   }
@@ -107,7 +107,7 @@ if (window.parent !== window) {
     const data = event.data as { type?: unknown; height?: unknown } | null
     if (data?.type === 'nexus-viewport' && typeof data.height === 'number' && data.height > 0) {
       hostHeight = data.height
-      // 面板 B 的遮罩层用这个变量算可用高（比 92vh 更准：不受 iframe 当前高度影响）
+      // 面板填满宿主给的可用高；宿主没给就吃满 iframe（CSS 的 max-height 回退 100%）
       document.documentElement.style.setProperty('--nx-b-available', String(data.height) + 'px')
       report()
     }

@@ -54,7 +54,9 @@
 /* 面板：铺满可用宽高，圆角与状态条同一档（原来我把圆角写成 0、又没给 height，
    结果"面板不圆角 + 高度只有内容高"）。 */
 .nx-b .panel { width: 100%; max-width: none; height: 100%;
-  max-height: min(92vh, var(--nx-b-available, 100vh)); display: flex; flex-direction: column;
+  /* 不要再叠 92vh：iframe 的高度已由宿主决定，再乘 0.92 会在底部留一条空
+     （实测 iframe 620 时面板只有 570，而宿主里的「Agent 预设」是填满的）。 */
+  max-height: var(--nx-b-available, 100%); display: flex; flex-direction: column;
   background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); overflow: hidden; }
 .nx-b .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); flex: none; }

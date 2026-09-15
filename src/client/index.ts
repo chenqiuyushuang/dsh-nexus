@@ -41,7 +41,10 @@ function MemorySection(): ReturnType<typeof createElement> {
     // 面板需要知道宿主能给它多高（否则只能按默认上限猜）；宿主尺寸变化要重发
     const sendViewport = (): void => {
       const host = frame.current?.parentElement
-      const available = host !== null && host !== undefined && host.clientHeight > 0 ? host.clientHeight : window.innerHeight - 160
+      const parentH = host !== null && host !== undefined && host.clientHeight > 0 ? host.clientHeight : 0
+      // 面板自己要报高度时，父容器会随 iframe 一起长高 → 用 max(父, 视口) 避免抖动；
+      // 再留 16px 给设置页的内边距。
+      const available = Math.max(parentH, window.innerHeight - 220, 320) - 16
       frame.current?.contentWindow?.postMessage({ type: 'nexus-viewport', height: available }, window.location.origin)
     }
     const timer = window.setInterval(sendViewport, 500)
@@ -62,9 +65,9 @@ function MemorySection(): ReturnType<typeof createElement> {
       // 面板自己报高度：收起态（面板 B 的状态条）只报 ~50px，不再白占宿主半屏；
       // 展开态报到 620 为止，多出来的内容由面板内部滚动。
       // （专家实测：原来的 minHeight:480 兜底让"收起"在设置页里也占掉大半屏。）
-      height: height > 0 ? Math.min(height, 620) : 320,
+      height: height > 0 ? Math.min(height, 1000) : 320,
       minHeight: 48,
-      maxHeight: 620,
+      maxHeight: 1000,
       border: 'none',
       borderRadius: 0,
       display: 'block',
