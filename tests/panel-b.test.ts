@@ -130,6 +130,17 @@ describe('0.8 面板 B', () => {
     expect(strip!.textContent).toContain('点此重试')
   })
 
+  it('面板与状态条同宽同圆角：都是 .nx-b 的直接子元素，圆角都取 --radius', async () => {
+    await mount()
+    const strip = container.querySelector('.status-strip')!
+    expect(strip.parentElement?.className).toBe('nx-b')
+    click('.status-strip')
+    const panel = container.querySelector('.panel')!
+    expect(panel.getAttribute('role')).toBe('dialog')
+    expect(panel.parentElement?.className).toBe('overlay')
+    expect(panel.parentElement?.parentElement?.className).toBe('nx-b')
+  })
+
   it('归因视图按"进入 / 未进入"分组，未进入的给出原因', async () => {
     await mount()
     click('.status-strip')

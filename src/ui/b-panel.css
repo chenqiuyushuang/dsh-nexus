@@ -38,19 +38,25 @@
   font-size: var(--nx-content-font-size, 13px);
   font-variant-numeric: tabular-nums;
   min-height: 100%;
+  /* 状态条与面板左右对齐：状态条留 8px 外边距，面板所在遮罩也是 8px 内边距 */
+  padding: 8px;
 }
+.nx-b:has(.overlay) { padding: 0; }
 .nx-b *, .nx-b *::before, .nx-b *::after { box-sizing: border-box; }
 
 /* 原型 B 的 .overlay 规则在移植时整段丢了（只有 _shots/b-panel-scoped-auto.css 那份旧备份里有），
    后果：面板退回普通流块、「点面板外关闭」成死代码、状态条 + 92vh 导致 7px 文档溢出 + 两条滚动条。
    这里补回来，并把 max-height 改成"可用高"（用 --nx-b-available 由 JS 按宿主视口写入，回退 92vh）。 */
-.nx-b .overlay { position: fixed; inset: 0; display: flex; align-items: flex-start; justify-content: center;
-  padding: 0; background: rgba(0, 0, 0, 0.55); z-index: 40; }
-/* 面板宽度：原来照抄原型的 max-width:420px + overlay padding:8px → 面板比状态条窄一圈。
-   在 DSH 里 iframe 就是我们的全部空间，没有"独立窄浮层"的必要 → 铺满，与状态条左右齐平。 */
-.nx-b .panel { width: 100%; max-width: none; max-height: min(92vh, var(--nx-b-available, 100vh)); display: flex; flex-direction: column;
-  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 0;
-  box-shadow: none; overflow: hidden; }
+/* 遮罩：8px 内边距给面板留出圆角与阴影的呼吸位；面板宽度仍与状态条一致
+   （状态条也有 8px 外边距，见下面的 .nx-b 规则）。 */
+.nx-b .overlay { position: fixed; inset: 0; display: flex; align-items: stretch; justify-content: center;
+  padding: 8px; background: rgba(0, 0, 0, 0.55); z-index: 40; }
+/* 面板：铺满可用宽高，圆角与状态条同一档（原来我把圆角写成 0、又没给 height，
+   结果"面板不圆角 + 高度只有内容高"）。 */
+.nx-b .panel { width: 100%; max-width: none; height: 100%;
+  max-height: min(92vh, var(--nx-b-available, 100vh)); display: flex; flex-direction: column;
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6); overflow: hidden; }
 .nx-b .panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--border); flex: none; }
 .nx-b .panel-title { font-size: 15px; font-weight: 600; }
 .nx-b .panel-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 12px 14px 16px; }
