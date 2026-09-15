@@ -342,7 +342,8 @@ export function BPanel(): React.ReactNode {
   const scopeTotal = Math.max(1, scopeCounts.user + scopeCounts.project + scopeCounts.episode)
 
   return (
-    <div className="nx-b" ref={rootRef}>
+    // 面板打开时根节点加 .panel-open：背景/圆角/边框/阴影都在这一层（B 的统一表面）
+    <div className={'nx-b' + (open ? ' panel-open' : '')} ref={rootRef}>
       {/* 加载中也要有可见状态：否则数据到达前面板是一片空白 */}
       {/* 首屏：加载中 / 读取失败都要有真实状态。
           之前失败时状态条照样渲染「0 条进入上下文 | 0 B | 0 条待确认」—— 把"读取失败"伪装成"没有记忆"。 */}

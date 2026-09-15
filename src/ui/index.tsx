@@ -70,9 +70,14 @@ if (window.parent !== window) {
       const strip = bRoot.querySelector('.status-strip') as HTMLElement | null
       const panel = bRoot.querySelector('.panel') as HTMLElement | null
       if (panel === null) return Math.ceil((strip?.getBoundingClientRect().height ?? 44) + 8)
+      // 面板打开：直接吃满宿主可用高（内容多高交给内部滚动）。
+      // 之前是按"内容高（最多 6 张卡）"算，结果宿主里只报到 471，而设置弹窗有 800 高，
+      // 面板下方白留一大片（用户实拍指出）。
+      if (bRoot.classList.contains('panel-open')) {
+        return hostHeight > 0 ? hostHeight : window.innerHeight
+      }
       const body = bRoot.querySelector('.panel-body') as HTMLElement | null
       const panelChrome = panel.getBoundingClientRect().height - (body?.getBoundingClientRect().height ?? 0)
-      // 内容区想要多高：最多 6 张卡的高度（写死数字会跟卡片高度脱节，这里按真实内容算）
       const card = bRoot.querySelector('.mem-card') as HTMLElement | null
       const want = card !== null ? card.getBoundingClientRect().height * 6 : 360
       const scroll = body?.scrollHeight ?? 0
@@ -98,8 +103,7 @@ if (window.parent !== window) {
     return Math.ceil(chrome + Math.max(listDesired, 160) + 8)
   }
   const report = (): void => {
-    // 宿主没告知可用高度时按 620 申请（面板自身会滚，宿主不认也不会更差）
-    const cap = hostHeight > 0 ? Math.min(1000, Math.max(320, hostHeight - 16)) : 1000
+    const cap = hostHeight > 0 ? Math.min(2000, Math.max(320, hostHeight)) : 2000
     const height = Math.min(desiredHeight(), cap)
     window.parent.postMessage({ type: 'nexus-height', height }, '*')
   }

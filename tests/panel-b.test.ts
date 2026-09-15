@@ -138,7 +138,8 @@ describe('0.8 面板 B', () => {
     const panel = container.querySelector('.panel')!
     expect(panel.getAttribute('role')).toBe('dialog')
     expect(panel.parentElement?.className).toBe('overlay')
-    expect(panel.parentElement?.parentElement?.className).toBe('nx-b')
+    // 展开态根节点带 panel-open —— 背景/圆角/边框都挂在这一层（统一表面）
+    expect(panel.parentElement?.parentElement?.className).toBe('nx-b panel-open')
   })
 
   it('归因视图按"进入 / 未进入"分组，未进入的给出原因', async () => {

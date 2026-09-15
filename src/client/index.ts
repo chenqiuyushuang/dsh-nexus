@@ -65,9 +65,9 @@ function MemorySection(): ReturnType<typeof createElement> {
       // 面板自己报高度：收起态（面板 B 的状态条）只报 ~50px，不再白占宿主半屏；
       // 展开态报到 620 为止，多出来的内容由面板内部滚动。
       // （专家实测：原来的 minHeight:480 兜底让"收起"在设置页里也占掉大半屏。）
-      height: height > 0 ? Math.min(height, 1000) : 320,
+      height: height > 0 ? Math.min(height, 2000) : 320,
       minHeight: 48,
-      maxHeight: 1000,
+      maxHeight: 2000,
       border: 'none',
       borderRadius: 0,
       display: 'block',
