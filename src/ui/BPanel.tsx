@@ -116,6 +116,8 @@ export function BPanel(): React.ReactNode {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   // 彻底清除不可恢复 → 二次确认（原来 70×30 一键清 34 条，无确认无撤销）
   const [emptyConfirm, setEmptyConfirm] = useState(false)
+  // 宽屏双栏里的"详情栏"选中项（窄栏不显示这一栏）
+  const [detailId, setDetailId] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [editing, setEditing] = useState<MemoryItem | null>(null)
@@ -273,6 +275,11 @@ export function BPanel(): React.ReactNode {
   }), [items, query, libFilter, scopeFilter])
 
   const trashItems = useMemo(() => items.filter((i) => i.status === 'archived'), [items])
+  // 详情栏展示哪一条：显式选中的优先，否则给第一条（打开就有内容，不用先点）
+  const libDetail = useMemo(
+    () => library.find((i) => i.id === detailId) ?? library[0] ?? null,
+    [library, detailId],
+  )
 
   const toggleCheck = (id: string, shift: boolean): void => {
     const index = library.findIndex((i) => i.id === id)
@@ -504,6 +511,7 @@ export function BPanel(): React.ReactNode {
                     <button onClick={() => setSelected(new Set())}>取消</button>
                   </div>
 
+                  <div className="lib-split">
                   <div className="lib-list">
                     {library.map((item, index) => (
                       <div className={'lib-item' + (item.pinned === true ? ' pinned' : '') + (selected.has(item.id) ? ' selected' : '')} key={item.id}>
@@ -514,8 +522,8 @@ export function BPanel(): React.ReactNode {
                           onChange={(e) => toggleCheck(item.id, (e.nativeEvent as MouseEvent).shiftKey === true)}
                         />
                         <div className="lib-item-body" role="button" tabIndex={0} aria-expanded={expandedId === item.id}
-                          onClick={() => setExpandedId(expandedId === item.id ? null : item.id)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(expandedId === item.id ? null : item.id) } }}>
+                          onClick={() => { setDetailId(item.id); setExpandedId(expandedId === item.id ? null : item.id) }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setDetailId(item.id); setExpandedId(expandedId === item.id ? null : item.id) } }}>
                           <div className="lib-item-title"><Highlight text={item.statement.slice(0, 140)} term={query.trim()} /></div>
                           <div className="lib-item-sub">
                             <span className={'status-dot ' + (item.status === 'active' ? 'active' : item.status === 'pending' ? 'pending' : item.status === 'needs-review' ? 'conflict' : 'archived')} aria-hidden="true" />
@@ -544,6 +552,32 @@ export function BPanel(): React.ReactNode {
                       </div>
                     ))}
                     {library.length === 0 && <div className="empty-hint">没有匹配的记忆<div className="sub">试试放宽筛选或搜索词</div></div>}
+                  </div>
+
+                  {/* 宽屏（≥560px）右侧详情栏：窄栏里 display:none，保持单列 + 行内展开 */}
+                  <aside className="lib-detail" aria-label="记忆详情">
+                    {libDetail === null
+                      ? <div className="empty-hint">选一条记忆查看详情<div className="sub">窄栏下点条目行内展开</div></div>
+                      : <>
+                          <div className="ld-title">{libDetail.statement}</div>
+                          <div className="ld-meta">
+                            {STATUS_WORD[libDetail.status] ?? libDetail.status}
+                            <span className="sep-dot">·</span> {SOURCE_WORD[libDetail.provenance ?? ''] ?? '来源未标注'}
+                            <span className="sep-dot">·</span> {SCOPE_WORD[libDetail.scope] ?? libDetail.scope}
+                            {libDetail.injectBytes !== undefined && <><span className="sep-dot">·</span> {fmtB(libDetail.injectBytes)} 注入</>}
+                            <span className="sep-dot">·</span> 更新 {relTime(libDetail.updatedAt)}
+                            <span className="sep-dot">·</span> ID {libDetail.id}
+                          </div>
+                          <div className="ld-actions">
+                            {libDetail.status === 'pending' && <button className="mini-btn green" onClick={() => void run('/nexus/api/memory/confirm', { ids: [libDetail.id] }, '已确认')}>确认</button>}
+                            <button className="mini-btn accent" onClick={() => void openEdit(libDetail)}>编辑</button>
+                            <button className="mini-btn" onClick={() => void run('/nexus/api/memory/pin', { id: libDetail.id, pinned: libDetail.pinned !== true }, libDetail.pinned === true ? '已取消置顶' : '已置顶')}>{libDetail.pinned === true ? '取消置顶' : '置顶'}</button>
+                            <button className="mini-btn" onClick={() => void openRelated(libDetail.id)}>关联</button>
+                            <button className="mini-btn warn" onClick={() => void run('/nexus/api/memory/reject', { ids: [libDetail.id] }, '已归档', () => { void restoreIds([libDetail.id], true) })}>归档</button>
+                            <button className="mini-btn danger" onClick={() => void run('/nexus/api/memory/delete', { ids: [libDetail.id] }, '已移入回收站', () => { void restoreIds([libDetail.id]) })}>入回收站</button>
+                          </div>
+                        </>}
+                  </aside>
                   </div>
                 </>
               )}
