@@ -7,6 +7,10 @@
    ===================================================================== */
 
 .nx-b {
+  /* 面板是纯深色（下面的调色板没有亮色变体）—— 显式声明 color-scheme，
+     否则原生控件（select 的下拉弹层、滚动条）会按系统亮色渲染：
+     深色面板里弹出一张白底的系统菜单。 */
+  color-scheme: dark;
   --bg: #0A0A0C;
   --bg-panel: #131316;
   --bg-card: #1A1A1E;
@@ -179,6 +183,9 @@
 .nx-b .mem-card-why { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 11.5px; }
 .nx-b .mem-card-why .why-text { flex: 1 1 auto; color: var(--text-3); }
 .nx-b .mem-card-why .why-text.warn { color: var(--orange); }
+/* 逐条一键修法：按未进入原因给对症动作（旧面板有、移植到 B 时丢掉的入口） */
+.nx-b .mem-card-fix { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.nx-b .mem-card-fix .mini-btn { font-size: 11.5px; padding: 2px 8px; }
 /* ⋯ 常显（原 opacity:0 只有 hover 才出现 → 触屏/键盘进不去，而它是归因卡上唯一的操作入口） */
 .nx-b .mem-card-more { background: transparent; border: 0; color: var(--text-3); cursor: pointer; font-size: 14px;
   padding: 4px 7px; border-radius: 5px; opacity: .55; transition: opacity .12s, background .12s; font-family: inherit; }
@@ -207,8 +214,45 @@
 .nx-b .lib-search { flex: 1 1 140px; min-width: 0; background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 12.5px; }
 .nx-b .lib-search:focus { outline: none; border-color: var(--blue); }
 .nx-b .lib-search::placeholder { color: var(--text-3); }
-.nx-b .lib-select { background: var(--bg-input); border: 1px solid var(--border); color: var(--text-2); border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; }
-.nx-b .lib-select:focus { outline: none; border-color: var(--blue); }
+/* 自绘下拉（src/ui/Select.tsx）。原生 <select> 的弹层是**系统菜单** —— CSS 够不着，
+   color-scheme: dark 也只在部分平台生效：深色面板里点开是一张白底菜单，
+   和面板的卡片/圆角/字号不是一套语言（用户两次反馈的就是这一处）。
+   另外原生 select 的宽度由「最长选项」决定，同样的 padding 下雪佛龙贴不贴文字全看选项长度，
+   并排两个控件不像一套。下面触发器 + 弹层全部走面板自己的 token。
+
+   弹层用 position: fixed：.panel-body 是滚动容器，absolute 会被裁掉；
+   固定定位的包含块是视口（.nx-b 上没有任何 transform/filter/contain），位置与限高由 JS 算。 */
+.nx-b .nx-select { position: relative; display: inline-flex; flex: 0 0 auto; min-width: 0; }
+.nx-b .sel-trigger {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px;
+  background: var(--bg-input); border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 6px 8px; font: inherit; cursor: pointer; text-align: left;
+}
+.nx-b .sel-trigger:hover { border-color: var(--border-frame); }
+.nx-b .sel-trigger:focus-visible { outline: none; border-color: var(--blue); }
+.nx-b .sel-trigger:disabled { opacity: .5; cursor: default; }
+.nx-b .sel-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-b .sel-chevron { flex: none; color: var(--text-3); transition: transform .15s; }
+.nx-b .nx-select.open .sel-trigger { border-color: var(--blue); }
+.nx-b .nx-select.open .sel-chevron { transform: rotate(180deg); }
+.nx-b .sel-pop {
+  position: fixed; z-index: 60; padding: 4px; overflow-y: auto;
+  background: var(--bg-card); border: 1px solid var(--border-frame); border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .6);
+}
+.nx-b .sel-opt {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 5px;
+  font-size: 12px; color: var(--text-2); cursor: pointer; white-space: nowrap;
+}
+.nx-b .sel-opt[data-active="true"] { background: var(--bg-hover); color: var(--text); }
+.nx-b .sel-opt[aria-selected="true"] { color: var(--text); }
+.nx-b .sel-opt-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.nx-b .sel-opt-check { flex: none; color: var(--blue); font-size: 10px; }
+/* 记忆库的两个筛选：与 .lib-search 同高；min-width 让「全部状态 / 全部作用域」等宽、
+   雪佛龙对齐 —— 原生 select 做不到（宽度取决于最长选项）。 */
+.nx-b .lib-select { min-width: 96px; }
+.nx-b .lib-select .sel-trigger { font-size: 12px; color: var(--text-2); }
+.nx-b .lib-select .sel-trigger:hover, .nx-b .lib-select.open .sel-trigger { color: var(--text); }
 .nx-b .btn-add-new { background: var(--blue-strong); border: 0; color: #fff; border-radius: 6px; font: inherit; font-size: 12.5px; font-weight: 600; padding: 6px 12px; cursor: pointer; flex: none; }
 .nx-b .btn-add-new:hover { filter: brightness(1.08); }
 
@@ -280,8 +324,18 @@
 .nx-b .doctor-block .dim { color: var(--text-3); min-width: 72px; }
 .nx-b .doctor-block .ok { color: var(--green); }
 .nx-b .doctor-block .warn { color: var(--orange); }
-.nx-b .setting-select, .nx-b .setting-text { background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12.5px; }
-.nx-b .setting-select:focus, .nx-b .setting-text:focus { outline: none; border-color: var(--blue); }
+.nx-b .setting-text { background: var(--bg-input); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 5px 8px; font: inherit; font-size: 12.5px; }
+.nx-b .setting-text:focus { outline: none; border-color: var(--blue); }
+/* 设置里的模型下拉：触发器尺寸对齐 .setting-text，弹层字号跟着走。
+   不要 width:100%：.setting-row 是「标签 flex:1 + 控件自然宽」，
+   撑满会把「模型」这类短标签挤成竖排。这里允许收缩，长模型名走省略号。 */
+.nx-b .setting-select {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 62%;
+}
+.nx-b .setting-select .sel-trigger { font-size: 12.5px; padding: 5px 8px; }
+.nx-b .setting-select .sel-opt { font-size: 12.5px; }
 .nx-b .setting-hint { font-size: 11px; color: var(--text-3); margin-top: 4px; line-height: 1.5; }
 
 /* 二级弹窗 */

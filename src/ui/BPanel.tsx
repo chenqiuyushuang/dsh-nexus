@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { Select } from './Select.tsx'
 
 type PanelMode = 'readwrite' | 'readonly' | 'paused'
 
@@ -50,6 +51,12 @@ interface NexusState {
   sourceCounts?: { user: number; model: number; agent: number }
   noise?: { count: number; ids: string[] }
   stats?: { today: number; pending: number; rejected: number; injections: number }
+  /** 成本账本（/nexus/api/state 一直在返回，此前默认面板没有渲染 —— 见 panel-cost-view）。 */
+  cost?: {
+    inject: { inputTokens: number; outputTokens: number; bytes: number }
+    extract: { inputTokens: number; outputTokens: number; bytes: number }
+    encode: { inputTokens: number; outputTokens: number; bytes: number }
+  }
   injection?: {
     budgetBytes: number; bytes: number; textBytes: number; project: string
     shown: InjectionEntry[]; dropped: InjectionDrop[]; counts: Record<string, number>
@@ -318,9 +325,69 @@ export function BPanel(): React.ReactNode {
     } catch { /* 用预览 */ }
   }
 
+  /**
+   * 面板当前查看的项目（'unknown' = 无从得知归属，不能拿来指派）。
+   *
+   * 为什么要显式回传：服务端 update 在缺 projectRef 时**沿用旧值**，而旧值可能是 undefined
+   * → buildAtom 归一成 'unknown' → 该记忆永不注入任何上下文。这就是「归属未知」的记忆
+   * 在默认面板里没有出路的原因（旧面板 InjectionBar 有指派入口，面板 B 移植时丢了）。
+   */
+  const viewedProjectRef = (): string | undefined => {
+    const current = state?.injection?.project
+    return current !== undefined && current !== '' && current !== 'unknown' ? current : undefined
+  }
+
+  /** 每个未进入原因能做什么（渲染按钮用；没有对症动作就不显示按钮）。 */
+  const FIX_LABEL: Record<string, string> = {
+    oversize: '缩短', budget: '缩短', 'unknown-project': '指派到当前项目', 'other-project': '指派到当前项目', inactive: '确认',
+  }
+
+  /**
+   * 逐条一键修法（README:45 承诺的那五个动作）。
+   *
+   * 面板 B 此前只有通用 ⋯ 菜单，于是「没有项目归属」这类记忆在默认面板里**没有出路** ——
+   * 这是旧面板 InjectionBar 有、移植到 B 时丢掉的入口。这里按未进入原因给对症的动作：
+   *   oversize / budget      → 缩短（按预算的 60% 截断，给别的条目让位）
+   *   unknown / other-project → 指派到当前项目
+   *   inactive               → 确认（下轮注入生效）
+   */
+  const quickFix = async (card: InjectionEntry, reason: string): Promise<void> => {
+    const cap = state?.injection?.budgetBytes ?? 1024
+    if (reason === 'oversize' || reason === 'budget') {
+      let statement = card.statement
+      try {
+        const full = await json<{ statement: string }>('/nexus/api/memory/get?id=' + encodeURIComponent(card.id))
+        statement = full.statement
+      } catch { /* 取不到全文就用预览 */ }
+      // 中文 1 字 ≈ 3 B，这里按 2 B/字保守估算，避免截完还是进不去
+      const targetChars = Math.max(20, Math.floor((cap * 0.6) / 2))
+      if (statement.length <= targetChars) { showToast('这条已经足够短，缩短帮助不大'); return }
+      await run('/nexus/api/memory/update', { id: card.id, statement: statement.slice(0, targetChars) + '…' }, '已缩短到约 ' + String(targetChars) + ' 字')
+      return
+    }
+    if (reason === 'unknown-project' || reason === 'other-project') {
+      const projectRef = viewedProjectRef()
+      if (projectRef === undefined) { showToast('面板当前没有可归属的项目 —— 先在归因页选择一个项目'); return }
+      await run('/nexus/api/memory/update', { id: card.id, scope: 'project', projectRef }, '已指派到当前项目')
+      return
+    }
+    if (reason === 'inactive') {
+      await run('/nexus/api/memory/confirm', { ids: [card.id] }, '已确认，下轮注入生效')
+    }
+  }
+
   const saveEdit = async (): Promise<void> => {
     if (editing === null) return
-    await run('/nexus/api/memory/update', { id: editing.id, statement: editText, scope: editScope }, '已更新')
+    const payload: Record<string, unknown> = { id: editing.id, statement: editText, scope: editScope }
+    if (editScope === 'project') {
+      const projectRef = viewedProjectRef()
+      if (projectRef === undefined) {
+        showToast('当前没有可归属的项目 —— 选「跨项目」保存，或先在归因页选择一个项目')
+        return
+      }
+      payload.projectRef = projectRef
+    }
+    await run('/nexus/api/memory/update', payload, '已更新')
     setEditing(null)
   }
 
@@ -469,6 +536,14 @@ export function BPanel(): React.ReactNode {
                                   <span className="why-text warn">{(card as InjectionDrop).detail}</span>
                                 </div>
                               )}
+                              {'reason' in card && FIX_LABEL[(card as InjectionDrop).reason] !== undefined && (
+                                <div className="mem-card-fix">
+                                  <button
+                                    className="mini-btn accent"
+                                    onClick={() => void quickFix(card, (card as InjectionDrop).reason)}
+                                  >{FIX_LABEL[(card as InjectionDrop).reason]}</button>
+                                </div>
+                              )}
                             </div>
                           )
                         })}
@@ -485,22 +560,34 @@ export function BPanel(): React.ReactNode {
                 <>
                   <div className="lib-toolbar">
                     <input className="lib-search" placeholder="搜索记忆内容…" value={query} onChange={(e) => setQuery(e.target.value)} />
-                    <select className="lib-select" value={libFilter} onChange={(e) => setLibFilter(e.target.value)}>
-                      <option value="all">全部状态</option>
-                      <option value="active">活跃</option>
-                      <option value="pending">待确认</option>
-                      <option value="conflict">冲突</option>
-                      <option value="archived">已归档</option>
-                      <option value="today">今日写入</option>
-                      <option value="user">仅用户明文</option>
-                      <option value="subagent">仅子代理回执</option>
-                    </select>
-                    <select className="lib-select" value={scopeFilter} onChange={(e) => setScopeFilter(e.target.value as typeof scopeFilter)}>
-                      <option value="all">全部作用域</option>
-                      <option value="user">跨项目</option>
-                      <option value="project">本项目</option>
-                      <option value="episode">本会话</option>
-                    </select>
+                    <Select
+                      className="lib-select"
+                      value={libFilter}
+                      onChange={setLibFilter}
+                      ariaLabel="状态筛选"
+                      options={[
+                        { value: 'all', label: '全部状态' },
+                        { value: 'active', label: '活跃' },
+                        { value: 'pending', label: '待确认' },
+                        { value: 'conflict', label: '冲突' },
+                        { value: 'archived', label: '已归档' },
+                        { value: 'today', label: '今日写入' },
+                        { value: 'user', label: '仅用户明文' },
+                        { value: 'subagent', label: '仅子代理回执' },
+                      ]}
+                    />
+                    <Select
+                      className="lib-select"
+                      value={scopeFilter}
+                      onChange={(next) => setScopeFilter(next as typeof scopeFilter)}
+                      ariaLabel="作用域筛选"
+                      options={[
+                        { value: 'all', label: '全部作用域' },
+                        { value: 'user', label: '跨项目' },
+                        { value: 'project', label: '本项目' },
+                        { value: 'episode', label: '本会话' },
+                      ]}
+                    />
                     <button className="btn-add-new" onClick={() => { setCreating(true); setNewText(''); setNewScope('project') }}>新增</button>
                   </div>
 
@@ -571,6 +658,15 @@ export function BPanel(): React.ReactNode {
                           </div>
                           <div className="ld-actions">
                             {libDetail.status === 'pending' && <button className="mini-btn green" onClick={() => void run('/nexus/api/memory/confirm', { ids: [libDetail.id] }, '已确认')}>确认</button>}
+                            {/* 合并近义重复：检测器把疑似重复标记为 pending + reviewNote=suspected-duplicate，
+                                并把它怀疑的那条记在 conflictWith。入口原先只在旧面板有，删旧面板时丢过一回。 */}
+                            {libDetail.reviewNote === 'suspected-duplicate' && libDetail.conflictWith !== undefined && (
+                              <button
+                                className="mini-btn accent"
+                                title={'与 ' + libDetail.conflictWith + ' 合并：保留那条，把这条标为已取代'}
+                                onClick={() => void run('/nexus/api/memory/merge', { keep: libDetail.conflictWith, drop: libDetail.id }, '已合并（这条标为已取代，可 trace 回溯）')}
+                              >合并重复</button>
+                            )}
                             <button className="mini-btn accent" onClick={() => void openEdit(libDetail)}>编辑</button>
                             <button className="mini-btn" onClick={() => void run('/nexus/api/memory/pin', { id: libDetail.id, pinned: libDetail.pinned !== true }, libDetail.pinned === true ? '已取消置顶' : '已置顶')}>{libDetail.pinned === true ? '取消置顶' : '置顶'}</button>
                             <button className="mini-btn" onClick={() => void openRelated(libDetail.id)}>关联</button>
@@ -634,10 +730,16 @@ export function BPanel(): React.ReactNode {
                     <div className="settings-title">LLM 提炼器</div>
                     <div className="setting-row">
                       <span className="label">模型</span>
-                      <select className="setting-select" value={extractSel} onChange={(e) => setExtractSel(e.target.value)}>
-                        <option value="">（不启用）</option>
-                        {models.map((m) => <option key={m.provider + '::' + m.model} value={m.provider + '::' + m.model}>{m.providerName} · {m.modelName}</option>)}
-                      </select>
+                      <Select
+                        className="setting-select"
+                        value={extractSel}
+                        onChange={setExtractSel}
+                        ariaLabel="提炼模型"
+                        options={[
+                          { value: '', label: '（不启用）' },
+                          ...models.map((m) => ({ value: m.provider + '::' + m.model, label: m.providerName + ' · ' + m.modelName })),
+                        ]}
+                      />
                     </div>
                     <div className="setting-hint">启用后，会话结束时用该模型提炼记忆（消耗 token，默认关闭）。</div>
                   </div>
@@ -657,7 +759,12 @@ export function BPanel(): React.ReactNode {
                       <div className="row"><span className="dim">活跃记忆</span><span>{activeCount} 条</span></div>
                       <div className="row"><span className="dim">自动降级</span><span className={state?.degraded === true ? 'warn' : 'ok'}>{state?.degraded === true ? '已降级（不注入）' : '正常'}</span></div>
                     </div>
-                    <div className="setting-hint">记忆保存在本机 ~/.dsh/nexus；也可用 /memory list、/memory search 在会话中查看。</div>
+                    <div className="doctor-block">
+                      <div className="row"><span className="dim">成本 · 注入</span><span>{(state?.cost?.inject.inputTokens ?? 0)} tok · {fmtB(state?.cost?.inject.bytes ?? 0)}</span></div>
+                      <div className="row"><span className="dim">成本 · 提炼</span><span>{(state?.cost?.extract.inputTokens ?? 0)} in / {(state?.cost?.extract.outputTokens ?? 0)} out</span></div>
+                      <div className="row"><span className="dim">成本 · 编码</span><span>{(state?.cost?.encode.inputTokens ?? 0)} tok</span></div>
+                    </div>
+                    <div className="setting-hint">投影（MEMORY.md / USER.md）在 <code>~/.dsh/nexus</code>；原子库走宿主 storage-domain 后端，路径与权限由宿主决定。</div>
                   </div>
 
                   <div className="settings-section">
@@ -768,7 +875,16 @@ export function BPanel(): React.ReactNode {
               <button className="mini-btn accent" onClick={() => {
                 void (async () => {
                   try {
-                    await post('/nexus/api/memory/create', { statement: newText.trim(), scope: newScope, confidence: newConf })
+                    const payload: Record<string, unknown> = { statement: newText.trim(), scope: newScope, confidence: newConf }
+                    if (newScope === 'project') {
+                      const projectRef = viewedProjectRef()
+                      if (projectRef === undefined) {
+                        showToast('当前没有可归属的项目 —— 选「跨项目」新增，或先在归因页选择一个项目')
+                        return
+                      }
+                      payload.projectRef = projectRef
+                    }
+                    await post('/nexus/api/memory/create', payload)
                     await load()
                     setCreating(false)
                     showToast('已新增 1 条记忆')

@@ -1,10 +1,12 @@
 /**
  * /nexus 面板浏览器入口：切换暗色（沿用 DSH 的 body[data-ds-dark-theme]），
- * 将 NexusPanel 挂到 #root。其余数据由 NexusPanel 从 /nexus/api/* 拉取。
+ * 将 BPanel 挂到 #root。其余数据由 BPanel 从 /nexus/api/* 拉取。
+ *
+ * **单一实现**：0.6 的 NexusPanel 与样例复刻档 SamplePanel 已删除（`?panel=old` /
+ * `?panel=sample` 两个入口一并移除）。它们的能力要么已移植进 BPanel（逐条一键修法、
+ * 成本明细），要么属于被后续版本推翻的中间产物；留着只会让同一个面板有三份真相。
  */
 import { createRoot } from 'react-dom/client'
-import { NexusPanel } from './NexusPanel.tsx'
-import { SamplePanel } from './SamplePanel.tsx'
 import { BPanel } from './BPanel.tsx'
 import { applyContentFontSize, fontSizeFromQuery, isDarkTheme, pickContentFontSize } from './theme.ts'
 
@@ -41,12 +43,10 @@ function applyHostFontSize(): void {
 }
 applyHostFontSize()
 
-// 面板选择：默认 = 面板 B（用户附件第二版的移植，0.8 起的主力）。
-// ?panel=old 回旧面板（0.6 那套），?panel=sample 看样例复刻档 —— 三份并存，确认后再删。
+// 单一实现：只有 BPanel，不再有 ?panel= 路由
 const container = document.getElementById('root')
-const which = new URLSearchParams(window.location.search).get('panel')
 if (container !== null) {
-  createRoot(container).render(which === 'old' ? <NexusPanel /> : which === 'sample' ? <SamplePanel /> : <BPanel />)
+  createRoot(container).render(<BPanel />)
 }
 
 // 嵌入 DSH 设置面板 iframe 时，把内容高度回传给宿主，让 iframe 自适应高度、
@@ -63,44 +63,26 @@ if (window.parent !== window) {
    * 当前 iframe 高度 → 面板只会「保持原样」，永远长不大（实测上报 448 = 当前高度）。
    */
   const desiredHeight = (): number => {
-    // 面板 B（默认档）用的是 .nx-b：没有 .nx-app/.nx-list，只有常驻状态条 + 面板内的 .panel-body。
-    // 不认它的话这个函数恒返回 168px，宿主只能拿 minHeight:480 兜底（专家实测 P1-7）。
+    // 单一实现后只剩面板 B（.nx-b）：常驻状态条 + 面板内的 .panel-body。
+    // 旧面板（.nx-app/.nx-list）的分支已随它们一起删除 —— 留着只会误导。
     const bRoot = document.querySelector('.nx-b')
-    if (bRoot !== null) {
-      const strip = bRoot.querySelector('.status-strip') as HTMLElement | null
-      const panel = bRoot.querySelector('.panel') as HTMLElement | null
-      if (panel === null) return Math.ceil((strip?.getBoundingClientRect().height ?? 44) + 8)
-      // 面板打开：直接吃满宿主可用高（内容多高交给内部滚动）。
-      // 之前是按"内容高（最多 6 张卡）"算，结果宿主里只报到 471，而设置弹窗有 800 高，
-      // 面板下方白留一大片（用户实拍指出）。
-      if (bRoot.classList.contains('panel-open')) {
-        return hostHeight > 0 ? hostHeight : window.innerHeight
-      }
-      const body = bRoot.querySelector('.panel-body') as HTMLElement | null
-      const panelChrome = panel.getBoundingClientRect().height - (body?.getBoundingClientRect().height ?? 0)
-      const card = bRoot.querySelector('.mem-card') as HTMLElement | null
-      const want = card !== null ? card.getBoundingClientRect().height * 6 : 360
-      const scroll = body?.scrollHeight ?? 0
-      const bodyWant = Math.min(scroll, want)
-      return Math.ceil(panelChrome + Math.max(bodyWant, 200) + 16)
+    if (bRoot === null) return 168
+    const strip = bRoot.querySelector('.status-strip') as HTMLElement | null
+    const panel = bRoot.querySelector('.panel') as HTMLElement | null
+    if (panel === null) return Math.ceil((strip?.getBoundingClientRect().height ?? 44) + 8)
+    // 面板打开：直接吃满宿主可用高（内容多高交给内部滚动）。
+    // 之前是按"内容高（最多 6 张卡）"算，结果宿主里只报到 471，而设置弹窗有 800 高，
+    // 面板下方白留一大片（用户实拍指出）。
+    if (bRoot.classList.contains('panel-open')) {
+      return hostHeight > 0 ? hostHeight : window.innerHeight
     }
-    const app = document.querySelector('.nx-app')
-    const list = document.querySelector('.nx-list')
-    let chrome = 0
-    if (app !== null) {
-      const style = getComputedStyle(app)
-      chrome += Number.parseFloat(style.paddingTop) + Number.parseFloat(style.paddingBottom)
-      for (const child of app.children) {
-        if (child === list) continue
-        const rect = child.getBoundingClientRect()
-        const margin = Number.parseFloat(getComputedStyle(child).marginBottom)
-        chrome += rect.height + (Number.isFinite(margin) ? margin : 0)
-      }
-    }
-    const firstRow = list?.querySelector('.nx-row')
-    const pitch = (firstRow !== null && firstRow !== undefined ? firstRow.getBoundingClientRect().height : 44) + 6
-    const listDesired = list === null ? 0 : Math.min(list.scrollHeight, pitch * 6)
-    return Math.ceil(chrome + Math.max(listDesired, 160) + 8)
+    const body = bRoot.querySelector('.panel-body') as HTMLElement | null
+    const panelChrome = panel.getBoundingClientRect().height - (body?.getBoundingClientRect().height ?? 0)
+    const card = bRoot.querySelector('.mem-card') as HTMLElement | null
+    const want = card !== null ? card.getBoundingClientRect().height * 6 : 360
+    const scroll = body?.scrollHeight ?? 0
+    const bodyWant = Math.min(scroll, want)
+    return Math.ceil(panelChrome + Math.max(bodyWant, 200) + 16)
   }
   const report = (): void => {
     const cap = hostHeight > 0 ? Math.min(2000, Math.max(320, hostHeight)) : 2000

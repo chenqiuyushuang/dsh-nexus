@@ -118,6 +118,13 @@ try {
     await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const btn = [...doc.querySelectorAll(".tab")].find((b) => (b.textContent || "").indexOf(' + JSON.stringify(label) + ') >= 0); if (btn) btn.click(); return !!btn })()' })
     await new Promise((r) => setTimeout(r, 700))
   }
+  // 场景：面板 B 的滚动位置（--scroll <px>）。归因页往下就是「未进入」分组，
+  // 不滚动只能看到第一屏，验不了一键修法按钮。
+  const scrollTo = Number(arg('scroll', '0'))
+  if (scrollTo > 0) {
+    await send('Runtime.evaluate', { expression: '(() => { const doc = document.getElementById("f").contentDocument; const body = doc.querySelector(".panel-body"); if (body) body.scrollTop = ' + String(scrollTo) + '; return body ? body.scrollTop : null })()' })
+    await new Promise((r) => setTimeout(r, 400))
+  }
   // 场景：参考稿绝对尺寸档（对照用；由面板 CSS 的 .reference-scale 类驱动）
   if (process.argv.includes('--reference-scale') || process.argv.includes('--row-scale')) {
     const cls = process.argv.includes('--reference-scale') ? 'reference-scale' : 'row-scale'
