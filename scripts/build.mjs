@@ -51,9 +51,9 @@ await build({
 })
 
 // 组装单文件 HTML：token CSS + React bundle 全内联，renderShell 直接返回。
+// 单一实现：只内联 theme.css（基础 token）与 b-panel.css；随旧面板一起删除的
+// replica.css / sample-palette.css 不再拼接。
 const theme = await readFile(new URL('../src/ui/theme.css', import.meta.url), 'utf8')
-  + '\n' + await readFile(new URL('../src/ui/sample-palette.css', import.meta.url), 'utf8')
-  + '\n' + await readFile(new URL('../src/ui/replica.css', import.meta.url), 'utf8')
   + '\n' + await readFile(new URL('../src/ui/b-panel.css', import.meta.url), 'utf8')
 const uiJs = await readFile(new URL('../lib/nexus-ui.js', import.meta.url), 'utf8')
 const safeJs = uiJs.replace(/<\/script/gi, '<\\/script')

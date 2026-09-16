@@ -15,7 +15,9 @@ if [ ! -d "$HOME_DIR/profiles/web" ]; then
 fi
 
 # 把最新的 tarball 热替换进调试 profile（不跑 pnpm，避免 store 版本不一致）
-TGZ=$(ls -t "$ROOT"/dsh-nexus-*.tgz 2>/dev/null | head -1 || true)
+# 注意 glob 要同时覆盖新旧两种命名：npm 打包带 scope 后叫 chenqiuyushuang-dsh-nexus-*.tgz，
+# 旧包叫 dsh-nexus-*.tgz —— 只匹配后者会静默装上一个过期版本（实测踩到过）。
+TGZ=$(ls -t "$ROOT"/*dsh-nexus-*.tgz 2>/dev/null | head -1 || true)
 if [ -n "$TGZ" ]; then
   TARGET="$HOME_DIR/profiles/web/node_modules/@chenqiuyushuang/dsh-nexus"
   TMP=$(mktemp -d)
