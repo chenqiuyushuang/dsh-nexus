@@ -14,8 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Select } from './Select.tsx'
-
-type PanelMode = 'readwrite' | 'readonly' | 'paused'
+import { panelToSessionMode, sessionToPanelMode, type PanelMode } from '../modes.ts'
 
 interface MemoryItem {
   id: string
@@ -212,9 +211,9 @@ export function BPanel(): React.ReactNode {
     run('/nexus/api/memory/restore', any ? { ids, any: true } : { ids }, '已恢复 ' + String(ids.length) + ' 条')
 
   // ---- 模式：三个按钮立即生效并落盘 ----
-  const panelMode: PanelMode = state?.mode === 'write-only' ? 'readonly' : state?.mode === 'pause' ? 'paused' : 'readwrite'
+  const panelMode: PanelMode = sessionToPanelMode(state?.mode ?? 'read-write')
   const setMode = async (next: PanelMode): Promise<void> => {
-    setState((prev) => (prev === null ? prev : { ...prev, mode: next === 'readwrite' ? 'read-write' : next === 'readonly' ? 'write-only' : 'pause' }))
+    setState((prev) => (prev === null ? prev : { ...prev, mode: panelToSessionMode(next) }))
     try { await post('/nexus/api/mode', { mode: next }); showToast(next === 'readwrite' ? '已切到「记录中」' : next === 'readonly' ? '已切到「只看不记」' : '已关闭记忆（不记也不注入）') }
     catch { showToast('模式切换失败'); await load() }
   }

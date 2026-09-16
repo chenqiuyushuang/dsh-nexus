@@ -30,14 +30,23 @@ export class HttpEncoder implements EncoderProcessor {
       body: JSON.stringify({ model: this.config.model, input: [text] }),
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) throw new Error("encoding endpoint " + res.status);
+    if (!res.ok) { this.noteFailure(); throw new Error("encoding endpoint " + res.status); }
     const data = (await res.json()) as { embeddings?: number[][] };
     const vec = data.embeddings?.[0];
-    if (vec === undefined || vec.length !== this.config.dim) throw new Error("encoding shape mismatch");
+    if (vec === undefined || vec.length !== this.config.dim) { this.noteFailure(); throw new Error("encoding shape mismatch"); }
     this.failures = 0;
     return vec;
   }
   get degraded(): boolean { return this.failures >= 3; }
+  /**
+   * 记一次失败（连续 3 次 → `degraded`，直到某次成功把它清零）。
+   *
+   * `encode` 自己会调它 —— 降级契约属于编码器本身，不该由调用方代为计数：
+   * 从前 `encode` 抛错时不自增，只有 `createHybridRetriever` 的 catch 里补记，
+   * 于是「单独用 encode」的那条路永远不会降级（回归测试
+   * `tests/retriever-vector.test.ts` 的 degraded 一例就是照这个写的）。
+   * 调用方因此**不要**再补记，否则一次失败会被数两遍、两次就降级。
+   */
   noteFailure(): void { this.failures += 1; }
 }
 
@@ -92,14 +101,14 @@ export function createHybridRetriever(textRetriever: RetrieverProcessor, config:
               if (vec === undefined) { vec = await encoder.encode(atom.subject + " " + atom.statement); vecCache.set(atom.id, vec); }
               scored.push({ atom, score: cosine(queryVec, vec) });
             } catch {
-              encoder.noteFailure();
+              // 该条丢弃（纯文本仍然可用）。失败已由 encoder.encode 记过，这里不再补记
             }
           }
           scored.sort((a, b) => b.score - a.score);
           scored.slice(0, config.topK).forEach((entry, index) => vectorRanks.push({ id: entry.atom.id, score: entry.score - index * 1e-6 }));
         }
       } catch {
-        encoder.noteFailure();
+        // query 编码失败：整轮退回纯文本。同上，失败计数由 encoder 自己维护
       }
       if (vectorRanks.length === 0) return textRanked;
       const fused = rrfFuse(textRanks, vectorRanks, config.rrfK);

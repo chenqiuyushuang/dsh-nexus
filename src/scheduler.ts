@@ -19,6 +19,7 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 import { z as zod } from 'zod'
 import type { NexusFacility } from './facility.ts'
 import type { ResolvedConfig } from './config.ts'
+import { panelToSessionMode, type SessionMode } from './modes.ts'
 import { shouldAutoDegrade } from './cost.ts'
 import { DEFAULT_EXTRACT_BUDGET, dailyBudgetRemaining, extractTokensUsedToday, planWindows, releaseExtractionBudget, reserveExtractionBudget, windowBytesFor, type ExtractBudget } from './budget.ts'
 import type { CapturedTurnEvent } from './processors.ts'
@@ -42,16 +43,9 @@ const nexusProjectionSchema = zod.object({
 type NexusMemoryProjection = zod.infer<typeof nexusProjectionSchema>
 
 /** Session memory modes (toggled by /memory session; default follows global). */
-export type SessionMode = 'read-write' | 'write-only' | 'pause'
-
-/** 面板 B 的三个按钮值 ↔ 内部会话模式。 */
-export type PanelMode = 'readwrite' | 'readonly' | 'paused'
-export function panelToSessionMode(mode: PanelMode): SessionMode {
-  return mode === 'readwrite' ? 'read-write' : mode === 'readonly' ? 'write-only' : 'pause'
-}
-export function sessionToPanelMode(mode: SessionMode): PanelMode {
-  return mode === 'read-write' ? 'readwrite' : mode === 'write-only' ? 'readonly' : 'paused'
-}
+// 模式映射与类型收敛在 ./modes.ts（此前这里、web-ui 与面板各写一遍，类型还重复声明了两处）
+export type { SessionMode, PanelMode } from './modes.ts'
+export { panelToSessionMode, sessionToPanelMode } from './modes.ts'
 
 export class SessionModeControl {
   private readonly overrides = new Map<string, SessionMode>()

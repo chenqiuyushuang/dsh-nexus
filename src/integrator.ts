@@ -9,6 +9,7 @@
  * @module @chenqiuyushuang/dsh-nexus/integrator
  */
 import type { Atom } from './atom.ts'
+import { linkCluster } from './edges.ts'
 import type { MemoryStore } from './store.ts'
 import type { NexusFacility } from './facility.ts'
 import { deterministCues } from './extraction.ts'
@@ -83,15 +84,16 @@ export function planConsolidation(atoms: readonly Atom[], config: IntegratorConf
   return { clusters, eligible, summaries };
 }
 
-/** 执行整合：dry-run 只计划；否则概况记忆进 pending（门控矩阵 model-inferred < 0.95 → pending）。 */
+/** 执行整合：dry-run 只计划；否则概况记忆进 pending（门控矩阵 model-inferred < 0.95 → pending）+ 给成员建 semantic 边。 */
 export async function runIntegrator(
   store: MemoryStore,
   facility: NexusFacility,
   config: IntegratorConfig,
-): Promise<{ plan: ConsolidationPlan; written: number }> {
+): Promise<{ plan: ConsolidationPlan; written: number; linked: number }> {
   const atoms = [...store.atomEntries()].map(([, atom]) => atom).filter(atom => atom.status === 'active');
   const plan = planConsolidation(atoms, config);
   let written = 0;
+  let linked = 0;
   if (!config.dryRun) {
     for (const summary of plan.summaries) {
       await facility.saveAtom({
@@ -105,7 +107,11 @@ export async function runIntegrator(
         sources: summary.sources.map(source => ({ ...source })),
       }, { sessionId: 'integrator' });
       written += 1;
+      // 聚类成员两两建 semantic 共现边（幂等）——`neighborsOf` 的「相关邻里」靠的就是这批边。
+      // 回归：`linkCluster` 此前全仓零调用点（integrator 只写概况记忆、不建边），
+      // 于是面板的「相关邻里」永远看不到聚类关系，反死机制里它是最后一个未接线符号。
+      linked += await linkCluster(store, summary.memberIds);
     }
   }
-  return { plan, written };
+  return { plan, written, linked };
 }

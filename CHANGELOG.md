@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.13 — 反死机制清零 + 向量检索补测（2026-09）
+
+### 反死机制：三个违反项全部收口
+- **`linkCluster` 接线**：integrator 在非 dry-run 下给聚类成员两两建 `semantic` 共现边（幂等，n 个成员 n(n-1)/2 条），`/memory integrate run` 的输出补「建 semantic 边 N 条」。此前它全仓零调用点 —— integrator 只写概况记忆、从不建边，于是面板「相关邻里」（`neighborsOf`）永远看不到聚类关系
+- **`sessionToPanelMode` 收敛**：面板按钮值 ↔ 内部会话模式的映射曾在**三处各写一遍**（scheduler / web-ui 的 `/nexus/api/mode` / 面板 BPanel），类型还重复声明了两处（`config.ts` 与 `scheduler.ts`）。全部收敛到新增的 `src/modes.ts`（无依赖，因此浏览器 bundle 也能直接 import；`scheduler.ts` 会拖进 cordis，不行），并补了 `isPanelMode` 做入口校验
+- **机器清单上线**：状态表新增「零调用点的导出」小节（`deadExports()` 现算），与「零测试引用的模块」并列 —— 从此「有实现、没接线」不再靠人记。当前只剩一个测试辅助函数（`resetExtractionBudgetForTests`）
+- 新增 `tests/edges.test.ts`（6 例：n(n-1)/2 条边、幂等与顺序无关、不建自环、dry-run 不落地、run 必须建边）与 `tests/modes.test.ts`（4 例：映射不串台、往返一致、枚举完整、入口校验）
+
+### 向量检索：补测试，并因此抓出一个真缺陷
+- 新增 `tests/retriever-vector.test.ts`（9 例：降级契约 / RRF 名次融合 / 余弦边界 / 编码全挂回退纯文本 / 空结果与过短 query 不打网络）
+- **缺陷**：`HttpEncoder.encode` 抛错时不自增失败计数，「连续 3 次失败降级」实际由调用方在 catch 里代记 —— 单独用 `encode` 的那条路永远不会降级。改成编码器自己计数，调用方不再补记（否则一次失败会被数两遍、两次就降级）
+- 仍未上线：默认关闭不变（不传 / 传 false / 传 true 都得到 false）。下一步是影子对比（关键词 Top-K vs +向量 Top-K），但那需要先有一个可用的 embedding 端点：宿主 DSH 没有 embeddings seam（checkout 里搜不到），而本机 provider 中的 zai（智谱）有 `embedding-3`
+
+### 零测试引用的模块 10 → 6
+`retriever-vector` / `processors` / `edges` / `integrator` 因新测试脱离名单；仍剩 `degrade` / `events` / `extractor-llm` / `importer` / `skill-compiler` / `ui/index.tsx`
+
 ## 0.8.12 — 文档一致性收口 + 影子计数覆盖全部写入路径（2026-09）
 
 ### 写入

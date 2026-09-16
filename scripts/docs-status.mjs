@@ -288,6 +288,41 @@ function untestedModules() {
     .map(file => file.path)
 }
 
+/**
+ * 零调用点的导出（自动核算，写进生成物）——「有实现、没接线」的机器清单。
+ *
+ * 口径：`src/` 里 `export function|class X`，把 `X` 放到**整个 src/**（含自己文件里
+ * 去掉声明行之后的部分）里数；一次都不出现 = 没人调用。`src/index.ts`（插件入口）与
+ * `src/ui/index.tsx`（面板入口）排除 —— 它们是被宿主/HTML 加载的，不是被 import 的。
+ * 名字只出现在 `tests/` 里的会单独标注：那仍是「生产路径没人用」，但至少被测试钉着。
+ * 只看函数与类，不看常量/类型 —— 后两者常是配置或公开 API，误报率高。
+ */
+function deadExports() {
+  const files = collect('src').filter(file => /\.[jt]sx?$/.test(file.path))
+  const byPath = new Map(files.map(file => [file.path, file.text]))
+  const testText = collect('tests').map(file => file.text).join('\n')
+  const found = []
+  for (const [path, text] of byPath) {
+    if (path === 'src/index.ts' || path === 'src/ui/index.tsx') continue
+    const re = /^export (?:async )?(?:function|class) (\w+)/gm
+    let match
+    while ((match = re.exec(text)) !== null) {
+      const name = match[1]
+      const word = new RegExp('\\b' + name + '\\b', 'g')
+      let calls = 0
+      for (const [other, otherText] of byPath) {
+        // 自己文件里要先把声明行去掉，否则「定义」会被当成一次「使用」
+        const scanned = other === path
+          ? otherText.replace(new RegExp('^export (?:async )?(?:function|class) ' + name + '\\b.*$', 'm'), '')
+          : otherText
+        calls += (scanned.match(word) ?? []).length
+      }
+      if (calls === 0) found.push({ path, name, inTests: (testText.match(word) ?? []).length })
+    }
+  }
+  return found
+}
+
 function probeText(probe) {
   switch (probe.kind) {
     case 'symbol-called':
@@ -420,6 +455,25 @@ function render(registry) {
   }
   lines.push('')
 
+  lines.push('## 零调用点的导出（现算：有实现、没接线的机器清单）')
+  lines.push('')
+  const dead = deadExports()
+  lines.push('口径：`export function|class X` 的 `X` 在整个 `src/` 里（含自己文件的其余部分）一次都没被用到；'
+    + '排除 `src/index.ts` 与 `src/ui/index.tsx`（宿主/HTML 加载的入口）。'
+    + '标注「仅测试引用」的说明生产路径没人调、但至少被测试钉着。')
+  lines.push('')
+  if (dead.length === 0) {
+    lines.push('0 个：`src/` 里每个导出的函数/类都有调用点。')
+  } else {
+    lines.push('共 **' + String(dead.length) + '** 个：')
+    lines.push('')
+    for (const entry of dead) {
+      lines.push('- `' + entry.path + '` 的 `' + entry.name + '`'
+        + (entry.inTests > 0 ? '（仅测试引用 ' + String(entry.inTests) + ' 处，生产路径零调用）' : '（全仓零引用）'))
+    }
+  }
+  lines.push('')
+
   lines.push('## 维护规则')
   lines.push('')
   lines.push('1. 改了 `src/` 行为 → 跑 `npm run docs:check`；探针失败说明本表已过期。')
@@ -445,7 +499,10 @@ if (MODE === 'explain') {
     }
   }
   const untested = untestedModules()
+  const dead = deadExports()
   console.log('\n零测试引用的模块：' + (untested.length === 0 ? '无' : '\n  ' + untested.join('\n  ')))
+  console.log('零调用点的导出：' + (dead.length === 0 ? '无'
+    : '\n  ' + dead.map(entry => entry.path + ' :: ' + entry.name + (entry.inTests > 0 ? '（仅测试引用）' : '')).join('\n  ')))
   console.log('叙述文档漂移：' + (narrative.length === 0 ? '无' : '\n  ' + narrative.join('\n  ')))
   console.log('\n探针失败 ' + String(failures.length) + ' 条')
   process.exit(failures.length === 0 && narrative.length === 0 ? 0 : 1)

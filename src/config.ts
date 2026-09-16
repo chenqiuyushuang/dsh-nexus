@@ -12,7 +12,9 @@ import { join } from 'node:path'
 import type { VectorConfig } from './retriever-vector.ts'
 
 export type ExtractMode = 'deterministic' | 'reminder' | 'off'
-export type SessionMode = 'read-write' | 'write-only' | 'pause'
+import type { SessionMode } from './modes.ts'
+
+export type { SessionMode }
 
 /** 用户可见的向量检索配置（不完整时由 resolveConfig 补默认值）。 */
 export interface InputVectorConfig {

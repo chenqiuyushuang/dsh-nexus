@@ -468,23 +468,30 @@
       "title": "向量检索 + RRF 融合（默认关）",
       "status": "partial",
       "docs": "NEXUS-DESIGN §5.4, V0.9-SURFACE-AUDIT",
-      "evidence": "src/retriever-vector.ts, src/config.ts:137-150",
-      "detail": "代码完整但本部署从未配置外部 embedding 服务；V0.9 审计列为「建议删，待决定」",
+      "evidence": "src/retriever-vector.ts, src/config.ts 的 vector 解析, tests/retriever-vector.test.ts",
+      "detail": "代码完整（HttpEncoder + cosine + RRF 融合 + 降级契约），默认关闭：不传 / 传 false / 传 true 都得到 false（传 true 还会 warn 缺 endpoint/model/dim），要开启必须显式给 `vector: { endpoint, model, dim }`。2026-09 复核：宿主 DSH 没有 embeddings seam（checkout 的 packages/*/src 里搜不到 embedding 相关代码），所以它只能直连第三方 embedding HTTP 端点；而本机的 provider 里有 zai（智谱），其 embedding-3 是现成端点 —— 「没有 embedder」的准确说法是「从没配过」。本轮补了 tests/retriever-vector.test.ts（9 例：降级契约 / RRF 名次融合 / 余弦边界 / 三种回退），并因此抓出一个真缺陷：`HttpEncoder.encode` 抛错时不自增失败计数，「连续 3 次失败降级」实际由调用方代记 —— 单独用 encode 的那条路永远不会降级。已改成编码器自己计数（调用方不再补记）。",
       "probes": [
         {
-          "kind": "file-exists",
-          "path": "src/retriever-vector.ts",
+          "kind": "text-present",
+          "file": "tests/retriever-vector.test.ts",
+          "pattern": "降级契约",
           "expect": true
         },
         {
           "kind": "text-present",
-          "file": "src/config.ts",
-          "pattern": "lazyEncodeLimit",
+          "file": "src/retriever-vector.ts",
+          "pattern": "this\\.noteFailure\\(\\); throw new Error\\(\"encoding endpoint",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/retriever-vector.ts",
+          "pattern": "export function rrfFuse",
           "expect": true
         }
       ],
       "disposition": "defer",
-      "rationale": "V0.9-SURFACE-AUDIT 已列为待决定（删或留）"
+      "rationale": "保留为「待验证」而不是删：缺陷是零证据而非代码多余 —— 测试已补（不再在零测试名单里），下一步是影子对比（关键词 Top-K vs +向量 Top-K，不改行为）。只有在对比证明「向量确实多召回了该召回的条目」后才值得配真 embedder；否则届时再删，那才是有证据的删除。反方也认：若目标是配置面最小，5 个旋钮 + 一条走不到的分支就是负债，删掉同样可接受（git 可取回）"
     },
     {
       "id": "retrieval-holdout-gate",
@@ -1813,20 +1820,14 @@
       "group": "质量门与工程",
       "title": "反死机制：每条机制必须有指标 + 回归测试",
       "status": "implemented",
-      "docs": "README:85, V0.5-DESIGN §一.4（已如实写明）",
-      "evidence": "scripts/docs-status.mjs（untestedModules 现算 + 叙述门禁），docs/status.json",
-      "detail": "已对齐：死代码只剩 linkCluster（src/edges.ts，全仓零调用点）—— runLifecycle 已在 0.8.9 接到 Facility.tickLifecycle，README 里「当前被自身代码违反」的旧表述随之作废；「零测试引用的模块」不再写死数字，由 docs-status.mjs 现算并写进生成物的独立小节（README 只指向它）。防复发由 docs:check 门禁承担（CI + pre-commit），叙述门禁另拦「活文档把已删除的符号当现有功能」。",
+      "docs": "README:86, V0.5-DESIGN §一.4（已如实写明）",
+      "evidence": "scripts/docs-status.mjs（untestedModules + deadExports 现算 + 叙述门禁）, docs/status.json",
+      "detail": "已对齐：两个数字都不再写死在文档里，由 docs-status.mjs 现算并写进生成物的独立小节 —— 「零测试引用的模块」（6 个）与「零调用点的导出」（1 个，且是测试辅助 resetExtractionBudgetForTests）。历史：runLifecycle 与 linkCluster 都曾是全仓零调用点，前者 0.8.9 接到 Facility.tickLifecycle、后者 0.8.12 接到 integrator（聚类成员两两建 semantic 边，面板「相关邻里」才看得到聚类关系）；sessionToPanelMode 曾是唯一的零调用点导出，模式映射收敛到 src/modes.ts 后 web-ui 与面板都在用。防复发由 docs:check 门禁承担（CI + pre-commit），叙述门禁另拦「活文档把已删除的符号当现有功能」。",
       "probes": [
         {
           "kind": "text-present",
           "file": "README.md",
           "pattern": "零测试引用的模块",
-          "expect": true
-        },
-        {
-          "kind": "text-present",
-          "file": "README.md",
-          "pattern": "linkCluster",
           "expect": true
         },
         {
@@ -1838,7 +1839,18 @@
         {
           "kind": "text-present",
           "file": "scripts/docs-status.mjs",
+          "pattern": "function deadExports",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "scripts/docs-status.mjs",
           "pattern": "function verifyNarrative",
+          "expect": true
+        },
+        {
+          "kind": "symbol-called",
+          "symbol": "linkCluster",
           "expect": true
         }
       ],

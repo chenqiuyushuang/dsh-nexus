@@ -207,7 +207,7 @@ export function installCommands(ctx: Context, facility: NexusFacility, modes: Se
             const store = await facility.store()
             const result = await runIntegrator(store, facility, { ...cfg, dryRun })
             const eligible = result.plan.eligible.length
-            return { kind: 'success', text: (dryRun ? '[dry-run] ' : '') + '聚类 ' + result.plan.clusters.length + ' 组，达标 ' + eligible + ' 组，产出概况 ' + result.plan.summaries.length + ' 条（均待确认）' }
+            return { kind: 'success', text: (dryRun ? '[dry-run] ' : '') + '聚类 ' + result.plan.clusters.length + ' 组，达标 ' + eligible + ' 组，产出概况 ' + result.plan.summaries.length + ' 条（均待确认）' + (dryRun ? '' : '，建 semantic 边 ' + result.linked + ' 条') }
           }
           case 'skill-compile': {
             const minWeight = Number(args.find(a => !isNaN(Number(a))) ?? SKILL_MIN_WEIGHT)

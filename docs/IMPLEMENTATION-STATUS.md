@@ -75,7 +75,7 @@
 | ✅ 已实现 | — 保持 | 默认文本检索（文档称 BM25） | NEXUS-DESIGN §2.1/§5.4（已改为「文本检索」） | `src/text.ts:148-164, src/retriever-text.ts:126-152` | 已对齐：设计稿不再称其为 BM25。实际算法是加权重叠 + IDF 稀有度因子（无 tf 饱和、无长度归一） |
 | ✅ 已实现 | — 保持 | 标题 2.5× 加权 + cues 命中加权 | NEXUS-DESIGN §5.4 | `src/text.ts:153-155` | subject 命中 +2.5，cues 命中 +1.5，statement +1 |
 | ✅ 已实现 | — 保持 | epoch 感知查询缓存（1 小时桶 + 库版本入键） | NEXUS-DESIGN §5.4 | `src/retriever-text.ts:22-47` | 库版本入键是后续修复，避免写入后 1 小时内仍返回旧结果 |
-| ⚠️ 部分实现 | ⏸️ 推迟 | 向量检索 + RRF 融合（默认关） | NEXUS-DESIGN §5.4, V0.9-SURFACE-AUDIT | `src/retriever-vector.ts, src/config.ts:137-150` | 代码完整但本部署从未配置外部 embedding 服务；V0.9 审计列为「建议删，待决定」 |
+| ⚠️ 部分实现 | ⏸️ 推迟 | 向量检索 + RRF 融合（默认关） | NEXUS-DESIGN §5.4, V0.9-SURFACE-AUDIT | `src/retriever-vector.ts, src/config.ts 的 vector 解析, tests/retriever-vector.test.ts` | 代码完整（HttpEncoder + cosine + RRF 融合 + 降级契约），默认关闭：不传 / 传 false / 传 true 都得到 false（传 true 还会 warn 缺 endpoint/model/dim），要开启必须显式给 `vector: { endpoint, model, dim }`。2026-09 复核：宿主 DSH 没有 embeddings seam（checkout 的 packages/*/src 里搜不到 embedding 相关代码），所以它只能直连第三方 embedding HTTP 端点；而本机的 provider 里有 zai（智谱），其 embedding-3 是现成端点 —— 「没有 embedder」的准确说法是「从没配过」。本轮补了 tests/retriever-vector.test.ts（9 例：降级契约 / RRF 名次融合 / 余弦边界 / 三种回退），并因此抓出一个真缺陷：`HttpEncoder.encode` 抛错时不自增失败计数，「连续 3 次失败降级」实际由调用方代记 —— 单独用 encode 的那条路永远不会降级。已改成编码器自己计数（调用方不再补记）。 |
 | ✅ 已实现 | — 保持 | holdout 检索质量门禁 | NEXUS-DESIGN §5.4/§11（已对齐） | `bench/holdout.ts:75, bench/bench.test.ts:9` | 已对齐：文档写明门槛 0.8、只有召回命中一个指标、端到端完成度未做；§5.4 与 §11 的矛盾已消除 |
 | ✅ 已实现 | — 保持 | memory_search 单次 ≤1.5KB | V0.5-DESIGN D3 | `src/tools.ts:88-104` | 逐条截断 statement + 总量封顶，超出的条数会显式提示 |
 
@@ -176,7 +176,7 @@
 | ✅ 已实现 | — 保持 | 写入质量指标线（9 条收敛为 3 条可测） | V0.5-DESIGN D6（已按可测性收敛） | `tests/golden.test.ts（P / 误记率 / scope）, bench/holdout.ts（Recall@5）` | 已收敛：**9 条里只保留有数据源的**。现在 CI 强制 4 条 —— 写入精确率 P≥0.9、误记率≤2%、scope≥0.98（均由金标集算，见 tests/golden.test.ts）与检索 Recall@5（bench/holdout 门槛 0.8）。其余 5 条（残留、MRR、假阳、注入命中、每会话次数）**没有数据源，已从文档删除**，不再当门面 |
 | ✅ 已实现 | — 保持 | 包体门禁（白名单／必需文件／逐字节一致／体积上限） | README 开发与工具, package.json | `scripts/check-pack.mjs:22-55, .github/workflows/ci.yml:23-24` | 四项都在，CI 会跑 |
 | ✅ 已实现 | — 保持 | pre-commit 路径硬拦截 | README:99 | `.githooks/pre-commit:11-13` | 按路径/扩展名拦截，无内容扫描；--no-verify 可绕过（已在注释说明） |
-| ✅ 已实现 | — 保持 | 反死机制：每条机制必须有指标 + 回归测试 | README:85, V0.5-DESIGN §一.4（已如实写明） | `scripts/docs-status.mjs（untestedModules 现算 + 叙述门禁），docs/status.json` | 已对齐：死代码只剩 linkCluster（src/edges.ts，全仓零调用点）—— runLifecycle 已在 0.8.9 接到 Facility.tickLifecycle，README 里「当前被自身代码违反」的旧表述随之作废；「零测试引用的模块」不再写死数字，由 docs-status.mjs 现算并写进生成物的独立小节（README 只指向它）。防复发由 docs:check 门禁承担（CI + pre-commit），叙述门禁另拦「活文档把已删除的符号当现有功能」。 |
+| ✅ 已实现 | — 保持 | 反死机制：每条机制必须有指标 + 回归测试 | README:86, V0.5-DESIGN §一.4（已如实写明） | `scripts/docs-status.mjs（untestedModules + deadExports 现算 + 叙述门禁）, docs/status.json` | 已对齐：两个数字都不再写死在文档里，由 docs-status.mjs 现算并写进生成物的独立小节 —— 「零测试引用的模块」（6 个）与「零调用点的导出」（1 个，且是测试辅助 resetExtractionBudgetForTests）。历史：runLifecycle 与 linkCluster 都曾是全仓零调用点，前者 0.8.9 接到 Facility.tickLifecycle、后者 0.8.12 接到 integrator（聚类成员两两建 semantic 边，面板「相关邻里」才看得到聚类关系）；sessionToPanelMode 曾是唯一的零调用点导出，模式映射收敛到 src/modes.ts 后 web-ui 与面板都在用。防复发由 docs:check 门禁承担（CI + pre-commit），叙述门禁另拦「活文档把已删除的符号当现有功能」。 |
 | ✅ 已实现 | — 保持 | 价值门回放脚本作为回归 | V0.9-VALUE-GATE, README:94 | `tests/value-gate.test.ts（混淆矩阵回放）` | 已补：混淆矩阵回放进入 CI（按线上库真实分布生成 22 回执 + 7 提示词 + 4 真记忆，断言垃圾 100% 拦下、真记忆零误拦、总数 29/33）。**误拦率 0 就是切换为拦截的前置条件**，所以这条测试同时守住那道门槛。手动脚本 scripts/value-gate-replay.mjs 保留为「对真实库跑」的便利工具，但不再是唯一的回放手段 |
 
 ## 事件与宿主契约
@@ -197,7 +197,7 @@
 ### ⏸️ 推迟（4 条）
 
 - **价值门切换为拦截** — 按设计要等「连续 7 天、reject ≥50 条、误拦率 0」才切换。0.8.9 起影子计数已覆盖全部写入路径（见 write-value-gate-shadow），但样本量仍远未达标：当前库里 34 条、其中 29 条是历史垃圾，`scripts/value-gate-replay.mjs` 回放为 accept 0 / review 3 / reject 31。结论：先攒真实写入样本，再谈切换
-- **向量检索 + RRF 融合（默认关）** — V0.9-SURFACE-AUDIT 已列为待决定（删或留）
+- **向量检索 + RRF 融合（默认关）** — 保留为「待验证」而不是删：缺陷是零证据而非代码多余 —— 测试已补（不再在零测试名单里），下一步是影子对比（关键词 Top-K vs +向量 Top-K，不改行为）。只有在对比证明「向量确实多召回了该召回的条目」后才值得配真 embedder；否则届时再删，那才是有证据的删除。反方也认：若目标是配置面最小，5 个旋钮 + 一条走不到的分支就是负债，删掉同样可接受（git 可取回）
 - **integrator 聚类配置（默认 dry-run）** — V0.9-SURFACE-AUDIT 已列为待决定
 - **/memory skill-compile：生成 SKILL.md 草稿** — 「记忆 → 技能」是待用方向而非欠债：保留实现与命令，明确标注零使用/零测试，不补测试也不删。等这个方向真的要做时再补测试与实测（届时它才算上线）
 
@@ -205,18 +205,22 @@
 
 口径：`src/` 下的 `.ts/.tsx`（不含 `src/index.ts`），文件名在 `tests/` 里一次都没出现过。README 的「反死机制」条目指向本节 —— 数字写死在文档里下次增删模块就会过期。
 
-共 **10** 个：
+共 **6** 个：
 
 - `src/degrade.ts`
-- `src/edges.ts`
 - `src/events.ts`
 - `src/extractor-llm.ts`
 - `src/importer.ts`
-- `src/integrator.ts`
-- `src/processors.ts`
-- `src/retriever-vector.ts`
 - `src/skill-compiler.ts`
 - `src/ui/index.tsx`
+
+## 零调用点的导出（现算：有实现、没接线的机器清单）
+
+口径：`export function|class X` 的 `X` 在整个 `src/` 里（含自己文件的其余部分）一次都没被用到；排除 `src/index.ts` 与 `src/ui/index.tsx`（宿主/HTML 加载的入口）。标注「仅测试引用」的说明生产路径没人调、但至少被测试钉着。
+
+共 **1** 个：
+
+- `src/budget.ts` 的 `resetExtractionBudgetForTests`（仅测试引用 3 处，生产路径零调用）
 
 ## 维护规则
 

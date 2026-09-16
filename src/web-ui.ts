@@ -13,6 +13,7 @@ import { deriveSlot, normalizeStatement } from './atom.ts'
 import { deterministCues, hash16 } from './extraction.ts'
 import { summarizeCosts, shouldAutoDegrade } from './cost.ts'
 import { neighborsOf } from './edges.ts'
+import { isPanelMode, panelToSessionMode } from './modes.ts'
 import { DEFAULT_EXTRACT_BUDGET } from './budget.ts'
 import { DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
 import { injectionTruth, defaultProjectRef, projectRefs } from './injection-truth.ts'
@@ -355,11 +356,11 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     if (!guardWrite(req, res)) return;
     const body = await readJson(req) as { mode?: unknown };
     const raw = body?.mode;
-    if (raw !== 'readwrite' && raw !== 'readonly' && raw !== 'paused') {
+    if (!isPanelMode(raw)) {
       sendJson(res, 400, { error: "mode 需为 readwrite | readonly | paused" });
       return;
     }
-    const session = raw === 'readwrite' ? 'read-write' : raw === 'readonly' ? 'write-only' : 'pause';
+    const session = panelToSessionMode(raw);
     options.modes?.setGlobal(session);
     const store = await facility.store();
     await store.patchState({ panelMode: raw });
