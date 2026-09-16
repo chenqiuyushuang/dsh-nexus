@@ -11,8 +11,26 @@ import { tokenContainment } from './text.ts'
 
 /* ------------------------------ deterministic ------------------------------ */
 
-/** Trigger phrases that mark a user statement as durable by direct instruction. */
-export const USER_TRIGGER_RE = /(?:记住|请记住|以后都|以后一直|我的习惯是|我一直用|今后用|别忘记|别忘了|别忘|我们约定如下|我们约定|约定如下)/i
+/**
+ * Trigger phrases that mark a user statement as durable by direct instruction.
+ *
+ * 回归（golden xf-04）：繁体写法此前完全没覆盖 —— `記住，我用 pnpm` 一句都抓不到。
+ * CJK 不受 `/i` 影响，简繁必须**显式成对枚举**。
+ * 回归（golden xf-01）：`切记` 不在表里，`切记记住，明天要发版` 只能靠后面的「记住」勉强命中，
+ * 而 `切记，X` 这种同样明确的指令完全抓不到。
+ *
+ * 顺序：长词在前，避免 `记住` 抢先匹配掉 `请记住` 里的部分。
+ */
+const TRIGGER_PHRASES = [
+  '我的习惯是', '我的習慣是', '我们约定如下', '我們約定如下',
+  '以后一直', '以後一直', '请记住', '請記住',
+  '我们约定', '我們約定', '约定如下', '約定如下',
+  '以后都', '以後都', '今后用', '今後用',
+  '别忘记', '別忘記', '别忘了', '別忘了',
+  '记住', '記住', '别忘', '別忘',
+  '切记', '切記', '我一直用',
+]
+export const USER_TRIGGER_RE = new RegExp('(?:' + TRIGGER_PHRASES.join('|') + ')', 'i')
 
 /** Tool-result failure markers for zero-token lesson capture. */
 export const TOOL_FAILURE_RE = /(?:error|failed|failure|exception|超时|失败|报错|拒绝|timeout|EPERM|EACCES|ENOENT)/i
@@ -42,9 +60,17 @@ export function isIdentityStatement(text: string): boolean {
  * Interrogative shape. A question is never durable material — not even when it
  * contains a trigger word: 「你会记住我吗？」 must NOT be captured (the old
  * trigger path stripped 记住 and stored the nonsense 「你会我吗？」).
- * Fail-safe direction: a false positive only skips a borderline statement.
+ *
+ * 回归（本轮实测发现）：语气词类原为 `[吗呢么]`，于是**任何以「么」结尾的陈述句**
+ * 都被当成问句 —— 「提交信息要用中文说明改了什么」这种完全正常的约定会被 `ambiguous-sentence`
+ * 拦掉，并且顺带让排在后面的「规则文件已有」对一整类句子不可达。
+ * 现在只把「吗/呢」当无标记问句；含疑问词的「么」句要求**带问号**才算问句。
+ *
+ * 回归（golden xf-02）：选择问「记住用 pnpm 还是 npm」此前完全没识别 ——
+ * `还是` 引导的二选一问句也是问句，不是约定。末尾排除「吧/了/的/啊/嘛」，
+ * 因为「还是用 pnpm 吧」是**拍板**不是提问。
  */
-export const QUESTION_RE = /(?:[？?]\s*$|[吗呢么][？?]?\s*$|^(?:你|您)[^，。！？]{0,16}(?:吗|呢)[？?]?$|(?:是不是|有没有|会不会|能不能|可不可以|要不要|好不好|行不行)|(?:是|对|好|行|可以|中)吧[？?]?\s*$)/i
+export const QUESTION_RE = /(?:[？?]\s*$|[吗呢][？?]?\s*$|^(?:你|您)[^，。！？]{0,16}(?:吗|呢)[？?]?$|(?:是不是|有没有|会不会|能不能|可不可以|要不要|好不好|行不行)|(?:什么|怎么|为什么|哪个|哪里|多少)[^，。！？]{0,12}[？?]|还是[^，。！？]{1,12}(?<![吧了的啊嘛])$|(?:是|对|好|行|可以|中)吧[？?]?\s*$)/i
 
 /**
  * 句子形态的问句（锚定，非子串）：仅用于垃圾判定等"整句"语义，
@@ -119,8 +145,15 @@ export function stripTrigger(raw: string): string {
  * not be predicated on the assistant ("你能记住…", "会不会记得…") — those are
  * questions about my memory, not facts to store.
  */
-export const TRIGGER_CLAUSE_HEAD_RE = /(?:^|[，。！？；：\s])(?:请|帮我|麻烦|以后|今后|一定要|务必|记得)?\s*(?:记住|请记住|别忘|我们约定|约定如下|以后都|以后一直|我的习惯是|我一直用|今后用)/i
+// 与 USER_TRIGGER_RE 同源（由 TRIGGER_PHRASES 生成），避免两处词表漂移
+export const TRIGGER_CLAUSE_HEAD_RE = new RegExp('(?:^|[，。！？；：\\s])(?:请|帮我|麻烦|以后|今后|一定要|务必|记得|切记)?\\s*(?:' + TRIGGER_PHRASES.join('|') + ')', 'i')
 const SECOND_PERSON_TRIGGER_RE = /(?:你|您|是否|能否|可否|会不会|能不能)[^，。！？；]{0,6}(?:记住|记得|别忘)/
+
+/**
+ * 第三人称引述（golden xf-05）：「他说，记住要用 pnpm 装依赖」里的触发词属于**别人的话**，
+ * 不是用户自己的记忆。判据保守：句首是第三人称主语 + 言说动词。
+ */
+export const THIRD_PERSON_QUOTE_RE = /^(?:他|她|它|他们|她们|别人|同事|用户|对方|有人|大家)[^，。！？]{0,8}(?:说|讲|问|表示|认为|提到|写道|要求|强调)/
 
 /** Whether a trigger phrase is actually an instruction to remember. */
 export function isInstructionTrigger(text: string): boolean {
@@ -146,6 +179,8 @@ export function extractFromTrigger(text: string, projectRef?: string): Candidate
   if (isInterrogative(text)) return undefined
   // 触发词必须是指令（祈使小句开头），不能是"你能记住…吗 / 我想确认你会记住"这类关于助手记性的句子
   if (!isInstructionTrigger(text)) return undefined
+  // 第三人称引述（golden xf-05）：「他说，记住要用 pnpm 装依赖」是转述别人的话，不是用户的记忆
+  if (THIRD_PERSON_QUOTE_RE.test(text.trim())) return undefined
   const statement = stripTrigger(text)
   if (statement.length < 2 || statement.length > 4000) return undefined
   if (isInterrogative(statement)) return undefined
@@ -248,6 +283,18 @@ export interface HardRejectVerdict {
 /** Ambiguity markers: questions, exclamations, subject-less moods. */
 export const AMBIGUOUS_RE = /^(?:[?？!！…]|为什么|怎么|如何|能不能|会不会|[^，。]{0,8}(?:好烦|好累|无语|再说吧|回头再说))/i
 
+/**
+ * 临时话题：带**显式**当下性标记的句子（保守判定 —— 只认明确的临时措辞，
+ * 宁可漏杀也不误杀。「今天部署到 staging」这种可能是长期约定的句子不拦）。
+ */
+export const TEMPORARY_RE = /(?:暂时|临时|先这样|回头再说|待会再|下次再说|今天先|先记一下|就这一次|这事儿先)/
+
+/**
+ * 代码可推导：陈述本身**自述来源是仓库文件**，说明读文件就能得到，不该占记忆位。
+ * 不做「猜测哪些事实可从代码推出」——那需要读仓库，纯函数做不到，硬做会大量误杀。
+ */
+export const DERIVABLE_RE = /(?:从|看|读|翻)\s*(?:package\.json|tsconfig|\.env|源码|代码|配置文件)[^，。]{0,10}(?:看|可知|知道|能看出|写着)|^(?:package\.json|tsconfig|\.env)\s*(?:里|中)/
+
 /** External (MCP/web) content must not become memory directly. */
 export const EXTERNAL_SOURCE_MARKERS = ['(mcp:', '[web]', 'http://', 'https://']
 
@@ -262,6 +309,12 @@ export function evaluateHardReject(text: string, opts: {
   }
   if (AMBIGUOUS_RE.test(text.trim()) || isInterrogative(text)) {
     return { reject: true, ruleId: 'ambiguous-sentence', reason: '模糊句（疑问/感叹/一时情绪）' }
+  }
+  if (TEMPORARY_RE.test(text)) {
+    return { reject: true, ruleId: 'temporary-talk', reason: '临时话题（只在当下成立，不该进长期记忆）' }
+  }
+  if (DERIVABLE_RE.test(text.trim())) {
+    return { reject: true, ruleId: 'derivable', reason: '代码可推导（读仓库文件即可得到）' }
   }
   if (opts.rulesText !== undefined && normalizeStatement(text).length > 0
     && tokenContainment(text, opts.rulesText) >= RULES_CONTAINMENT_MIN) {

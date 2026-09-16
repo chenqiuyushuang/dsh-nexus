@@ -8,6 +8,8 @@ import { NexusFacility } from '../src/facility.ts'
 import { MemoryStore } from '../src/store.ts'
 import type { KvLike, MemoryTables, NexusState } from '../src/store.ts'
 import type { CandidateAtom } from '../src/atom.ts'
+import { normalizeStatement } from '../src/atom.ts'
+import { hash16 } from '../src/extraction.ts'
 import { resolveConfig } from '../src/config.ts'
 
 function kv<K extends string, V>(): KvLike<K, V> {
@@ -29,9 +31,11 @@ function tables(): MemoryTables {
 }
 
 function draft(overrides: Partial<CandidateAtom> = {}): CandidateAtom {
+  // fp 由 statement 派生（与生产代码同构）：写死常量会让 fp 去重把所有不同陈述撞成一条
+  const statement = overrides.statement ?? '发布从 staging 分支进行'
   return {
-    fp: 'fp_semantics', kind: 'fact', slot: 'project', provenance: 'user-declared', scope: 'project',
-    subject: '发布', statement: '发布从 staging 分支进行', cues: [],
+    fp: 'fp_' + hash16(normalizeStatement(statement)), kind: 'fact', slot: 'project', provenance: 'user-declared', scope: 'project',
+    subject: '发布', statement, cues: [],
     weight: 1, pinned: false, injected: false, confidence: 0.98, sources: [],
     ...(overrides as object),
   } as CandidateAtom

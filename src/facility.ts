@@ -17,6 +17,8 @@ import type { Atom, CandidateAtom, MemoryId } from './atom.ts'
 import { atomCandidateSchema, costId, memoryId, normalizeStatement, recallId as recallRecordId, rejectId } from './atom.ts'
 import { evaluateGate } from './gate.ts'
 import { planForget } from './forgetter.ts'
+import { runLifecycle } from './lifecycle.ts'
+import { assessValue } from './value-gate.ts'
 import { createLlmExtractor, type LlmExtractorConfig } from './extractor-llm.ts'
 import type { ExtractorProcessor, ForgetterProcessor, ForgetPlan, SecurityScannerProcessor, ExtractOutput, RetrieverProcessor, RetrievedAtom } from './processors.ts'
 import type { CostRecord } from './atom.ts'
@@ -127,8 +129,55 @@ export class NexusFacility {
    */
   async saveAtom(draft: CandidateAtom, context?: SaveContext): Promise<Atom> {
     const atom = await this.saveAtomInner(draft, context)
+    await this.tickLifecycle()
     await this.onWriteHook?.()
     return atom
+  }
+
+  /**
+   * 价值门影子计数（只记判定，不改行为）。
+   *
+   * 覆盖面 = **每条通过黑名单 / fp 去重 / 安全扫描、真正进入判别流程的候选**，
+   * 调用点在 saveAtomInner 里 `buildAtom` 之后 —— 于是触发词、工具失败、goal/todo、
+   * `/memory` 命令、面板新增、导入、集成器这些写入路径全都记到，且每条候选只记一次
+   * （重复内容在 fp 去重那步就返回了，不会重复计数）。
+   *
+   * 回归：此前这段逻辑长在 scheduler 的**触发词分支**里（只覆盖一条写入路径），
+   * 而注册表的切换条件写的是「连续 7 天 / reject ≥50 条 / 误拦率 0」——
+   * 样本只从一条路径来，那两个阈值根本测不到。
+   */
+  private async recordValueShadow(store: MemoryStore, candidate: Atom): Promise<void> {
+    try {
+      const gate = assessValue({
+        statement: candidate.statement,
+        subject: candidate.subject,
+        provenance: candidate.provenance,
+        scope: candidate.scope,
+        kind: candidate.kind,
+      })
+      const state = store.getState()
+      const shadow = state.valueGateShadow ?? { accept: 0, review: 0, reject: 0, updatedAt: 0 }
+      await store.setState({ ...state, valueGateShadow: { ...shadow, [gate.verdict]: shadow[gate.verdict] + 1, updatedAt: Date.now() } })
+    } catch (error) {
+      // fail-open：影子计数坏了不能影响写入
+      console.warn('nexus: value-gate shadow failed (fail-open)', error)
+    }
+  }
+
+  /**
+   * 生命周期 tick：写入路径驱动（模块内 6 小时节流），没有后台定时器。
+   *
+   * 回归背景：`runLifecycle` 此前**全仓零调用点** —— 模块有实现、有单测，
+   * 但权重衰减从未真正执行过（IMPLEMENTATION-STATUS 的 `lifecycle-decay`）。
+   * fail-open：tick 出错不影响写入本身。
+   */
+  private async tickLifecycle(): Promise<void> {
+    try {
+      const store = await this.store()
+      await runLifecycle(store)
+    } catch (error) {
+      console.warn('nexus: lifecycle tick failed (fail-open)', error)
+    }
   }
 
   private async saveAtomInner(draft: CandidateAtom, context?: SaveContext): Promise<Atom> {
@@ -149,16 +198,27 @@ export class NexusFacility {
       return rejected
     }
 
+    // fp 幂等去重（§5.7「提取批量 = 逐条幂等 put，崩溃重跑安全」的基础）：
+    // 同内容指纹重复写入直接返回既有记录，不新建。
+    // 旧实现只写 fp、**从不读它** —— 于是「fp 去重」一直只是文档里的说法。
+    for (const [, existing] of store.atomEntries()) {
+      if (existing.fp !== verified.fp) continue
+      this.ctx.emit('nexus/memory/saved', existing)
+      return existing
+    }
+
     for (const scanner of this.scanners) {
       const verdict = await scanner.scan(verified)
       if (verdict.verdict === 'reject') {
         const rejected = this.buildAtom(verified, 'archived')
         this.ctx.emit('nexus/memory/rejected', rejected, 'security-scan: ' + verdict.reason)
+        await this.logReject(store, 'hard-reject', 'security-scan: ' + verdict.reason, verified, context)
         return rejected
       }
     }
 
     const candidate = this.buildAtom(verified, 'active')
+    await this.recordValueShadow(store, candidate)
     const snapshot = store.snapshot()
     const conflictingPreference = this.findConflictingPreference(candidate, snapshot)
     const suspectedDuplicate = conflictingPreference === undefined
@@ -176,6 +236,7 @@ export class NexusFacility {
     // Gate rejects noise outright (nothing persisted, observably reported).
     if (gate.action === 'reject') {
       this.ctx.emit('nexus/memory/rejected', candidate, gate.reason)
+      await this.logReject(store, 'deterministic-rule', gate.reason, verified, context)
       return candidate
     }
 
@@ -245,6 +306,35 @@ export class NexusFacility {
   }
 
 
+  /**
+   * RejectLog：写入侧每一条拒收都留样本（§5.1「全部记录 RejectLog」）。
+   *
+   * 回归：此前只有「触发词硬拒」与「用户拒绝」两条路径写日志，扫描器拒收与门控拒收
+   * 都不留痕 —— 于是「月度规则报告」缺了最主要的两类样本。fail-open，绝不影响写入。
+   */
+  private async logReject(
+    store: MemoryStore,
+    source: 'deterministic-rule' | 'hard-reject' | 'user-reject',
+    reason: string,
+    candidate: CandidateAtom,
+    context?: SaveContext,
+  ): Promise<void> {
+    try {
+      await store.putReject({
+        id: rejectId(),
+        at: Date.now(),
+        sessionId: context?.sessionId ?? 'write',
+        source,
+        sample: candidate.statement.slice(0, 500),
+        reason: reason.slice(0, 300),
+        kindHint: candidate.kind,
+      })
+      await store.pruneRejects(this.config.rejectLogMax)
+    } catch (error) {
+      console.warn('nexus: reject log failed (fail-open)', error)
+    }
+  }
+
   /** pending 上限淘汰：超限的最老候选归档（设计 §5.5 / Q-防堆积）。 */
   private async prunePending(store: MemoryStore): Promise<void> {
     const limit = this.config.pendingMax
@@ -312,6 +402,7 @@ export class NexusFacility {
       if (action === 'confirm') this.ctx.emit('nexus/memory/saved', next)
       else this.ctx.emit('nexus/memory/rejected', next, note)
     }
+    await this.tickLifecycle()
     return changed
   }
 

@@ -37,8 +37,8 @@ async function makePipeline(): Promise<{ facility: NexusFacility; store: MemoryS
   const ctx = { emit: (name: string, ...args: unknown[]) => { emitted.push([name, args]) } } as never;
   const store = new MemoryStore(tables());
   const facility = new NexusFacility(ctx, Promise.resolve(store), {
-    mode: 'standard', indexBudgetBytes: 1024, extract: 'reminder', vector: false, autoDegradeDays: 7,
-    pendingMax: 200, coldArchive: false, autoAcceptThreshold: 0.9, modelAutoThreshold: 0.95,
+    indexBudgetBytes: 1024, extract: 'reminder', vector: false, autoDegradeDays: 7,
+    pendingMax: 200, autoAcceptThreshold: 0.9, modelAutoThreshold: 0.95,
     rejectLogMax: 500, injectIntervalMs: 15000, sessionModeDefault: 'read-write', extractTimeoutMs: 90000,
     projectionDir: '/tmp/nexus-replay', extractorLlm: undefined,
   });

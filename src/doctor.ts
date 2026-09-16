@@ -35,7 +35,7 @@ export function diagnose(input: DoctorInput): DoctorReport {
   const warn = (text: string): void => { if (level === 'ok') level = 'warn'; lines.push('⚠ ' + text) }
   const info = (text: string): void => { lines.push('· ' + text) }
 
-  if (!input.storeWritable) bad('记忆目录不可写 —— 现在不会保存任何新记忆（检查 ~/.dsh/nexus 权限）')
+  if (!input.storeWritable) bad('记忆库不可写 —— 现在不会保存任何新记忆（检查宿主 storage-domain 后端与磁盘空间；投影目录权限无关）')
 
   const { active, pending, conflicts, archived, superseded } = input.counts
   info('记忆库：活跃 ' + String(active) + ' · 待确认 ' + String(pending) + ' · 冲突 ' + String(conflicts) + ' · 已归档 ' + String(archived) + ' · 已取代 ' + String(superseded))

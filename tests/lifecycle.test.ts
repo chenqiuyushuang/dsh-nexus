@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { MemoryStore } from '../src/store.ts'
 import type { KvLike, MemoryTables, NexusState } from '../src/store.ts'
 import type { Atom } from '../src/atom.ts'
-import { EPISODE_TTL_DAYS, isDecayImmune, runLifecycle } from '../src/lifecycle.ts'
+import { isDecayImmune, runLifecycle } from '../src/lifecycle.ts'
 import { reserveExtractionBudget, releaseExtractionBudget, resetExtractionBudgetForTests } from '../src/budget.ts'
 
 function kv<K extends string, V>(): KvLike<K, V> {
@@ -58,15 +58,38 @@ describe('生命周期 tick', () => {
     for (const a of [pinned, pref, identity]) expect(store.getAtom(a.id)?.weight).toBe(5)
   })
 
-  it('episode 记忆超过 TTL 归档（不删除）', async () => {
+  it('episode 记忆不再按时间归档（回归：TTL 曾与「active 永不受时间影响」冲突，已删除）', async () => {
     const store = new MemoryStore(tables())
-    const stale = atom({ scope: 'episode', updatedAt: Date.now() - (EPISODE_TTL_DAYS + 10) * DAY })
+    const stale = atom({ scope: 'episode', updatedAt: Date.now() - 900 * DAY })
     await store.putAtom(stale)
     const report = await runLifecycle(store, Date.now(), true)
-    expect(report.archived).toBe(1)
+    // 有效期只由冲突与人工裁决驱动 —— 时间不是失效理由
+    expect('archived' in report).toBe(false)
     const after = store.getAtom(stale.id)!
-    expect(after.status).toBe('archived')
-    expect(after.reviewNote).toBe('episode-ttl')
+    expect(after.status).toBe('active')
+    expect(after.reviewNote).toBeUndefined()
+  })
+
+  it('待确认超过 30 天归档；pinned 候选豁免（回归：分级过期此前完全不存在）', async () => {
+    const store = new MemoryStore(tables())
+    const stale = atom({ status: 'pending', createdAt: Date.now() - 31 * DAY, updatedAt: Date.now() })
+    const fresh = atom({ status: 'pending', createdAt: Date.now() - 3 * DAY, updatedAt: Date.now() })
+    const pinned = atom({ status: 'pending', pinned: true, createdAt: Date.now() - 900 * DAY, updatedAt: Date.now() })
+    for (const a of [stale, fresh, pinned]) await store.putAtom(a)
+    const report = await runLifecycle(store, Date.now(), true)
+    expect(report.expired).toBe(1)
+    expect(store.getAtom(stale.id)?.status).toBe('archived')
+    expect(store.getAtom(stale.id)?.reviewNote).toBe('pending-expired')
+    expect(store.getAtom(fresh.id)?.status).toBe('pending')
+    expect(store.getAtom(pinned.id)?.status).toBe('pending')
+  })
+
+  it('已确认的 active 记忆不受时间影响（只有冲突与人工裁决能改变它）', async () => {
+    const store = new MemoryStore(tables())
+    const old = atom({ status: 'active', createdAt: Date.now() - 900 * DAY, updatedAt: Date.now() - 900 * DAY })
+    await store.putAtom(old)
+    await runLifecycle(store, Date.now(), true)
+    expect(store.getAtom(old.id)?.status).toBe('active')
   })
 
   it('6 小时内重复调用被节流，force 可绕过', async () => {

@@ -25,7 +25,7 @@ describe('/memory doctor 自检', () => {
   it('不可写是最严重的问题（bad）', () => {
     const report = diagnose({ ...healthy, storeWritable: false })
     expect(report.level).toBe('bad')
-    expect(report.lines[0]).toContain('记忆目录不可写')
+    expect(report.lines[0]).toContain('记忆库不可写')
   })
 
   it('垃圾/冲突/全零/降级都给 warn 与可执行入口', () => {

@@ -31,7 +31,7 @@ export * from './atom.ts'
 export * from './store.ts'
 export * from './projection.ts'
 export { Config, resolveConfig } from './config.ts'
-export type { ResolvedConfig, NexusMode, ExtractMode } from './config.ts'
+export type { ResolvedConfig, ExtractMode } from './config.ts'
 export * from './gate.ts'
 export * from './forgetter.ts'
 export * from './extraction.ts'
@@ -75,7 +75,7 @@ export function apply(ctx: Context, config: Config): void {
   })
   const facility = new NexusFacility(ctx, storePromise, resolved)
   void facility.enableConfiguredLlmExtractor()
-  facility.registerScanner(createScanner('minimal'))
+  facility.registerScanner(createScanner(resolved.scannerRules))
   facility.registerRetriever(resolved.vector === false
     ? createTextRetriever({ topK: 6, cacheSize: 128 })
     : createHybridRetriever(createTextRetriever({ topK: 6, cacheSize: 128 }), resolved.vector, resolved.vector.dim))
@@ -129,5 +129,5 @@ export function apply(ctx: Context, config: Config): void {
     }
   }
 
-  console.info('nexus: loaded (mode=' + resolved.mode + ', extract=' + resolved.extract + ', indexBudget=' + resolved.indexBudgetBytes + ')')
+  console.info('nexus: loaded (extract=' + resolved.extract + ', indexBudget=' + resolved.indexBudgetBytes + ')')
 }

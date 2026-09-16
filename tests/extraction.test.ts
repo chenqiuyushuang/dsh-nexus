@@ -142,6 +142,33 @@ describe('interrogative guard (regression: 「你会记住我吗？」 stored �
     expect(evaluateHardReject('你会记住我吗？')).toMatchObject({ reject: true, ruleId: 'ambiguous-sentence' })
     expect(evaluateHardReject('这个接口能不能用')).toMatchObject({ reject: true, ruleId: 'ambiguous-sentence' })
   });
+
+  it('临时话题与代码可推导真正生效（回归：两条规则曾只声明、永不返回）', () => {
+    expect(evaluateHardReject('这次先这样，回头再说')).toMatchObject({ reject: true, ruleId: 'temporary-talk' })
+    expect(evaluateHardReject('暂时用 mock 顶一下')).toMatchObject({ reject: true, ruleId: 'temporary-talk' })
+    expect(evaluateHardReject('从 package.json 看依赖是 pnpm')).toMatchObject({ reject: true, ruleId: 'derivable' })
+    // 保守判定：不误杀可能是长期约定的句子
+    expect(evaluateHardReject('今天部署到 staging')).toMatchObject({ reject: false })
+    expect(evaluateHardReject('项目用 pnpm 管理依赖')).toMatchObject({ reject: false })
+  });
+
+  it('规则文件已有：传入 rulesText 时命中（回归：生产调用方从不传它）', () => {
+    const rules = '项目约定：所有提交信息用中文说明改了什么'
+    expect(evaluateHardReject('提交信息要用中文说明改了什么', { rulesText: rules }))
+      .toMatchObject({ reject: true, ruleId: 'already-in-rules' })
+    // 不传 rulesText 时不应误判
+    expect(evaluateHardReject('提交信息要用中文说明改了什么')).toMatchObject({ reject: false })
+  });
+
+  it('以「么」结尾的陈述句不再被误判为问句（回归：语气词类曾含 么）', () => {
+    // 这些都是陈述，不是提问
+    expect(isInterrogative('提交信息要用中文说明改了什么')).toBe(false)
+    expect(isInterrogative('项目的构建脚本做了这些事')).toBe(false)
+    // 真问句照样拦（带问号，或由其他疑问形式命中）
+    expect(isInterrogative('你刚才改了什么？')).toBe(true)
+    expect(evaluateHardReject('你刚才改了什么？').reject).toBe(true)
+    expect(evaluateHardReject('你会记住我吗？').reject).toBe(true)
+  });
 });
 describe('identity scope routing (regression: 名字曾是 project 作用域)', () => {
   it('recognizes who-the-user-is statements across phrasings', () => {

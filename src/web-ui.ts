@@ -101,8 +101,11 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
       // 回收站 = 用户显式移入的（与系统归档区分），UI 需要独立计数
       trash: all.filter(a => a.status === "archived" && a.reviewNote === "user-deleted").length,
       archivedBySystem: all.filter(a => a.status === "archived" && a.reviewNote !== "user-deleted").length,
-      // 子代理噪音（P0）：历史数据里被写进来的子代理提示词，面板给一键清理入口
-      noise: collectNoise(active),
+      // 子代理噪音（P0）：历史数据里被写进来的子代理提示词，面板给一键清理入口。
+      // 回归：此前只扫 `active` —— 而垃圾常常正躺在 pending / needs-review 里
+      // （实测本机 34 条库里 29 条是垃圾，27 条已归档、2 条卡在 needs-review），
+      // 于是横幅计数为 0、一键清理入口不出现，用户反而会在归因页看到「确认」按钮。
+      noise: collectNoise(all.filter(a => a.status !== 'archived' && a.status !== 'superseded')),
       // 注入真相（B4）：每条为什么进/不进，面板据此分组并给一键动作
       project,
       projects: projectRefs(all),
@@ -244,12 +247,18 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     if (statement.length < 2) { sendJson(res, 400, { error: "statement too short" }); return; }
     const rawScope = body?.scope;
     const scope: MemoryScope = rawScope === "user" || rawScope === "episode" ? rawScope : "project";
+    // 项目作用域必须能指定归属：此前恒为 undefined → 新建即「归属未知」→ 永不注入（与 update 路由同样的死胡同）
+    const rawProject = body?.projectRef;
+    const trimmedProject = rawProject === undefined ? undefined : String(rawProject).trim().slice(0, 300);
+    const projectRef = scope !== "project" || trimmedProject === undefined || trimmedProject === "" || trimmedProject === "unknown"
+      ? undefined
+      : trimmedProject;
     const kind: MemoryKind = /(?:习惯|喜欢|偏好|一直用)/i.test(statement) ? "preference" : "fact";
     const candidate: CandidateAtom = {
       fp: "fp_" + hash16(normalizeStatement(statement)),
       kind, scope, provenance: "user-declared",
       slot: deriveSlot({ kind, provenance: "user-declared", scope }),
-      projectRef: undefined,
+      projectRef,
       subject: statement.slice(0, 24),
       statement,
       cues: deterministCues(statement),
@@ -357,13 +366,15 @@ export function installNexusWeb(ctx: Context, facility: NexusFacility, options: 
     sendJson(res, 200, { ok: true, mode: raw });
   });
 
-  route("/nexus/api/settings", async (_req, res) => {
+  route("/nexus/api/settings", async (req, res) => {
+    if (!guardRead(req, res)) return;
     const store = await facility.store();
     const thresholds = await facility.getEffectiveThresholds();
     const extractorLlm = store.getState().extractorLlm;
     sendJson(res, 200, { ...thresholds, extractorLlm: extractorLlm ?? undefined });
   });
-  route("/nexus/api/models", async (_req, res) => {
+  route("/nexus/api/models", async (req, res) => {
+    if (!guardRead(req, res)) return;
     const llm = (ctx as unknown as { get?: (name: string) => unknown }).get?.("llm") as
       | { listProviders?: () => { id: string; name: string }[]; listModels?: (provider: string) => Promise<{ id: string; name: string }[]> }
       | undefined;
@@ -482,5 +493,5 @@ function renderShell(): string {
 }
 
 function renderShellFallback(): string {
-  return '<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><title>Nexus 记忆</title></head><body style="font:14px/1.6 -apple-system,sans-serif;margin:24px"><h1>Nexus 记忆</h1><p>静态面板未随包分发（web/nexus.html），数据接口不受影响：</p><ul><li><a href="/nexus/api/state">/nexus/api/state</a></li><li><a href="/nexus/api/memory">/nexus/api/memory</a></li></ul></body></html>'
+  return '<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><title>Nexus 记忆</title></head><body style="font:14px/1.6 -apple-system,sans-serif;margin:24px"><h1>Nexus 记忆</h1><p>静态面板未随包分发（lib/nexus.html 缺失），数据接口不受影响：</p><ul><li><a href="/nexus/api/state">/nexus/api/state</a></li><li><a href="/nexus/api/memory">/nexus/api/memory</a></li></ul></body></html>'
 }

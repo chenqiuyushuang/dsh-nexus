@@ -12,19 +12,31 @@ describe('nexus plugin shape', () => {
 
   it('fills documented defaults', () => {
     const resolved = resolveConfig({})
-    expect(resolved.mode).toBe('standard')
     expect(resolved.indexBudgetBytes).toBe(1024)
     expect(resolved.extract).toBe('reminder')
     expect(resolved.vector).toBe(false)
     expect(resolved.autoDegradeDays).toBe(7)
     expect(resolved.pendingMax).toBe(200)
-    expect(resolved.coldArchive).toBe(false)
+    expect(resolved.scannerRules).toBe('minimal')
+  })
+
+  it('已删除的死旋钮不再出现在 schema 里（mode / coldArchive）', () => {
+    // 两者曾「解析后无任何消费者」；按处置决定删除。未知键会被 schemastery 透传但不解析，
+    // 所以老配置照旧能加载，只是不再有这两个字段。
+    const resolved = resolveConfig(Config({ mode: 'strict', coldArchive: true } as never) as never)
+    expect('mode' in resolved).toBe(false)
+    expect('coldArchive' in resolved).toBe(false)
+  })
+
+  it('scannerRules 真的可选（回归：此键曾不在 schema 里，recommended 规则集运行时不可达）', () => {
+    expect(resolveConfig(Config({ scannerRules: 'recommended' }) as never).scannerRules).toBe('recommended')
+    expect(() => Config({ scannerRules: 'nonsense' })).toThrow(ValidationError)
   })
 
   it('accepts a valid full config (callable schema)', () => {
     expect(() => Config({
-      mode: 'strict', indexBudgetBytes: 2048, extract: 'off',
-      vector: true, autoDegradeDays: 14, pendingMax: 50, coldArchive: true,
+      indexBudgetBytes: 2048, extract: 'off',
+      vector: true, autoDegradeDays: 14, pendingMax: 50,
       extractorLlm: { provider: 'deepseek', model: 'deepseek-chat' },
     })).not.toThrow()
   })
@@ -43,6 +55,6 @@ describe('nexus plugin shape', () => {
   })
 
   it('rejects invalid enum values', () => {
-    expect(() => Config({ mode: 'insane' })).toThrow(ValidationError)
+    expect(() => Config({ extract: 'insane' })).toThrow(ValidationError)
   })
 })

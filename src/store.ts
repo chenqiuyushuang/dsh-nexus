@@ -194,6 +194,19 @@ export class MemoryStore {
   // ---- state ----
   getState(): NexusState { return this.tables.state.get() }
   async setState(next: NexusState): Promise<void> { await this.tables.state.set(next) }
+  /**
+   * 写可用性探测：把当前全局状态**原样写回**（不产生脏数据），因此走的是完整写链。
+   * 为什么不能只做读探测：读得出来不代表写得进去（只读挂载、磁盘满、后端降级都读得到）。
+   * 供 `/memory doctor` 的「✖ 不可写」结论使用 —— 此前该字段被硬编码为 true，结论不可达。
+   */
+  async probeWritable(): Promise<boolean> {
+    try {
+      await this.setState(this.getState())
+      return true
+    } catch {
+      return false
+    }
+  }
   /** 局部更新全局状态槽（读-改-写；面板的模式开关等单字段写入用它，避免调用方拼整个 state）。 */
   async patchState(patch: Partial<NexusState>): Promise<void> {
     await this.tables.state.set({ ...this.tables.state.get(), ...patch })

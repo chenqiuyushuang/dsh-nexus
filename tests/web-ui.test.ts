@@ -45,6 +45,16 @@ function boot(options: { allowRemote?: boolean } = {}) {
       return [...ids]
     },
     configureLlmExtractor: (config: { maxInputBytes?: number } | undefined) => { if (config !== undefined) configured.push(config) },
+    getEffectiveThresholds: async () => ({ autoAcceptThreshold: 0.9, modelAutoThreshold: 0.95 }),
+    saveAtom: async (draft: Record<string, unknown>) => {
+      // 复刻 facility.buildAtom 的隔离兜底：project 作用域缺归属 → 'unknown'
+      const atom = {
+        ...draft, id: 'nex_created00000001', status: 'active', createdAt: 1, updatedAt: 1,
+        projectRef: draft.scope === 'project' && draft.projectRef === undefined ? 'unknown' : draft.projectRef,
+      }
+      await store.putAtom(atom as never)
+      return atom
+    },
     touch: async () => {},
   }
   installNexusWeb(ctx as never, facility as never, options)
@@ -97,6 +107,16 @@ describe('面板鉴权（requireLocalPanel）', () => {
     expect((await call('/nexus/api/state', { host: 'nexus.example.com', origin: 'http://nexus.example.com' })).status).toBe(403)
     const remote = boot({ allowRemote: true })
     expect((await remote.call('/nexus/api/state', { host: 'nexus.example.com', origin: 'http://nexus.example.com' })).status).toBe(200)
+  })
+
+  it('settings 与 models 同样要求 loopback（回归：这两个端点此前完全没有守卫）', async () => {
+    const { call } = boot()
+    for (const path of ['/nexus/api/settings', '/nexus/api/models']) {
+      expect((await call(path, { host: 'nexus.example.com' })).status, path).toBe(403)
+      expect((await call(path, { host: '127.0.0.1.evil.com' })).status, path).toBe(403)
+      expect((await call(path, { host: '127.0.0.1:3080' })).status, path).toBe(200)
+      expect((await call(path, { host: 'localhost:3080' })).status, path).toBe(200)
+    }
   })
 })
 describe('面板操作：置顶 / 回收站 / 彻底清除', () => {
@@ -225,6 +245,20 @@ describe('B4 注入真相（/state + 指派项目）', () => {
     expect(data.injection.textBytes).toBeGreaterThan(data.injection.bytes)
   })
 
+  it('噪声扫描覆盖非 active 的垃圾（回归：此前只扫 active，needs-review 里的垃圾被漏掉）', async () => {
+    const { call, store } = boot()
+    // 归档的不该再被算（已经清理过了）
+    await store.putAtom(mk('nex_arch00000000001', { status: 'archived' }) as never)
+    // 卡在 needs-review 的子代理回执：正是用户会被邀请点「确认」的那类
+    await store.putAtom(mk('nex_rev000000000001', {
+      status: 'needs-review',
+      statement: 'Background subagent 4528e8c3-566f-4a53-94bb-ff5b3771653d finished and will do no further work unless prompted.',
+    }) as never)
+    const state = JSON.parse((await call('/nexus/api/state', { host: '127.0.0.1:3080' })).body)
+    expect(state.noise.count).toBe(1)
+    expect(state.noise.ids).toEqual(['nex_rev000000000001'])
+  })
+
   it('指派项目后归属未知的记忆立刻进入注入（一键修好）', async () => {
     const { call, store } = boot()
     await store.putAtom(mk('nex_unkn00000000002', { subject: 'k', statement: '归属未知的项目记忆' }) as never)
@@ -237,6 +271,22 @@ describe('B4 注入真相（/state + 指派项目）', () => {
     const after = JSON.parse((await call('/nexus/api/state?project=/proj/a', { host: '127.0.0.1:3080' })).body)
     expect(after.injection.lines).toBe(1)
     expect(after.injection.counts['unknown-project']).toBe(0)
+  })
+
+  it('新增记忆可带项目归属（回归：create 此前恒写 undefined → 新建即「归属未知」永不注入）', async () => {
+    const { call, store } = boot()
+    const res = await call('/nexus/api/memory/create', LEGIT, { statement: '项目用 pnpm 管理依赖', scope: 'project', projectRef: '/proj/a' })
+    expect(res.status).toBe(200)
+    const created = [...store.atomEntries()].map(([, atom]) => atom)
+    expect(created).toHaveLength(1)
+    expect(created[0].projectRef).toBe('/proj/a')
+    expect(created[0].scope).toBe('project')
+  })
+
+  it('不带 projectRef 的新建仍归一为 unknown（宁缺不漏，绝不降级成跨项目）', async () => {
+    const { call, store } = boot()
+    await call('/nexus/api/memory/create', LEGIT, { statement: '没有归属的项目记忆', scope: 'project' })
+    expect([...store.atomEntries()][0][1].projectRef).toBe('unknown')
   })
 })
 describe('B2 分页与列表投影', () => {

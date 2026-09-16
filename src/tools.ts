@@ -114,11 +114,37 @@ export function installTools(ctx: Context, facility: NexusFacility, resolved: Re
       const store = await facility.store();
       const atom = store.getAtom(args.id);
       if (atom === undefined) return '未找到记忆 ' + args.id;
+      // 默认只读 active（§7）：归档/取代/待确认的记忆不该经工具污染上下文；
+      // trace: true 时才允许回溯，并沿指针走完整 lineage（旧实现只回显两个字段）。
+      if (args.trace !== true && atom.status !== 'active') {
+        return '记忆 ' + atom.id + ' 的状态是「' + atom.status + '」，默认不可读。要回溯归档链请加 trace: true。';
+      }
       const lines = ['id: ' + atom.id, 'kind: ' + atom.kind, 'slot: ' + atom.slot, 'status: ' + atom.status,
         'statement: ' + atom.statement, 'confidence: ' + atom.confidence.toFixed(2), 'weight: ' + atom.weight,
         'sources: ' + (atom.sources.length === 0 ? '—' : atom.sources.map(source => source.sessionId + '#' + source.seq + (source.quote ? '「' + source.quote.slice(0, 60) + '」' : '')).join(' | '))];
-      if (args.trace === true && (atom.supersededBy !== undefined || atom.supersedes !== undefined)) {
-        lines.push('chain: supersedes=' + (atom.supersedes ?? '—') + ' supersededBy=' + (atom.supersededBy ?? '—'));
+      if (args.trace === true) {
+        const chain: string[] = [];
+        const seen = new Set<string>([atom.id]);
+        // 往前：这条取代了谁（supersedes 链）
+        let prior: string | undefined = atom.supersedes;
+        while (prior !== undefined && !seen.has(prior) && chain.length < 20) {
+          seen.add(prior);
+          const earlier = store.getAtom(prior);
+          if (earlier === undefined) { chain.unshift('← ' + prior + '（缺失）'); break; }
+          chain.unshift('← ' + earlier.id + '（' + earlier.status + '）');
+          prior = earlier.supersedes;
+        }
+        chain.push('● ' + atom.id + '（' + atom.status + '）');
+        // 往后：谁取代了这条（supersededBy 链）
+        let later: string | undefined = atom.supersededBy;
+        while (later !== undefined && !seen.has(later) && chain.length < 40) {
+          seen.add(later);
+          const next = store.getAtom(later);
+          if (next === undefined) { chain.push('→ ' + later + '（缺失）'); break; }
+          chain.push('→ ' + next.id + '（' + next.status + '）');
+          later = next.supersededBy;
+        }
+        if (chain.length > 1) lines.push('chain: ' + chain.join(' '));
       }
       return lines.join('\n');
     },
@@ -126,20 +152,26 @@ export function installTools(ctx: Context, facility: NexusFacility, resolved: Re
 
   ctx.tools.register(defineTool({
     name: 'memory_feedback',
-    description: '反馈最近一次注入是否有用：good 提升权重，bad 降低权重并帮助校准。',
+    description: '反馈最近一次注入是否有用：good 提升权重，bad 降低权重（下限 1）并帮助校准。',
     parameters: { ids: params.ids, kind: { type: 'string' as const, enum: ['good', 'bad'] as const, description: 'good 或 bad' } },
     output: TEXT_OUTPUT,
-    execute: async (args: { ids: string }) => {
+    execute: async (args: { ids: string; kind: 'good' | 'bad' }) => {
       const ids = args.ids.split(',').map(id => id.trim()).filter(Boolean);
       const store = await facility.store();
-      let bumped = 0;
+      const good = args.kind !== 'bad';
+      let changed = 0;
       for (const id of ids) {
         const atom = store.getAtom(id);
         if (atom === undefined || atom.status !== 'active') continue;
-        await store.updateAtom(id, current => ({ ...current, weight: Math.min(20, current.weight + 1), updatedAt: Date.now() }));
-        bumped += 1;
+        await store.updateAtom(id, current => good
+          // good = 一次「被用到」：加权并刷新时间（衰减以 updatedAt 为基准）
+          ? { ...current, weight: Math.min(20, current.weight + 1), updatedAt: Date.now() }
+          // bad = 一次纠正，不是一次使用：只降权（下限 1），**不刷新 updatedAt**
+          // （刷新会让它看起来更新鲜，反而在注入排序里往前挤，与反馈意图相反）
+          : { ...current, weight: Math.max(1, current.weight - 1) });
+        changed += 1;
       }
-      return '已强化 ' + bumped + ' 条记忆';
+      return (good ? '已强化 ' : '已降低权重 ') + changed + ' 条记忆';
     },
   }));
 }

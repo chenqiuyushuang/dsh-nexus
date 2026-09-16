@@ -9,6 +9,8 @@
  * @module @chenqiuyushuang/dsh-nexus/scheduler
  */
 import type { Context } from '@deepseek-ai/cordis'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createUserMessage, expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import type { Session } from '@deepseek-ai/dsh-session'
@@ -23,7 +25,6 @@ import type { CapturedTurnEvent } from './processors.ts'
 import { buildIndex, DEFAULT_INDEX_BUDGET_BYTES } from './projection.ts'
 import { evaluateHardReject, extractFromStateEvent, extractFromToolFailure, extractFromTrigger, TOOL_FAILURE_RE } from './extraction.ts'
 import { isSystemNotificationText } from './noise.ts'
-import { assessValue } from './value-gate.ts'
 import { recallId, rejectId } from './atom.ts'
 import { hash16 } from './extraction.ts'
 
@@ -158,10 +159,30 @@ function textOfUser(eventData: unknown): string | undefined {
   return parts.join('\n')
 }
 
+/**
+ * 规则文件内容（AGENTS.md / CLAUDE.md），按 cwd 缓存。
+ *
+ * 这是硬拒绝规则③「规则文件已有」的输入 —— 旧实现从来不传 `rulesText`，所以那条规则
+ * 在生产里永不触发（「最省 token 的记忆是规则」这句话因此落不了地）。
+ * 读取 fail-open：读不到就当作没有规则文件。
+ */
+const rulesFileCache = new Map<string, string>()
+function rulesTextFor(cwd: string | undefined): string | undefined {
+  if (cwd === undefined || cwd === '') return undefined
+  const cached = rulesFileCache.get(cwd)
+  if (cached !== undefined) return cached === '' ? undefined : cached
+  let text = ''
+  for (const name of ['AGENTS.md', 'CLAUDE.md']) {
+    try { text += readFileSync(join(cwd, name), 'utf8') + '\n' } catch { /* 不存在就跳过 */ }
+  }
+  rulesFileCache.set(cwd, text)
+  return text === '' ? undefined : text
+}
+
 /** Install capture, injection, and extraction listeners. */
 export function installScheduler(ctx: Context, facility: NexusFacility, config: ResolvedConfig): SessionModeControl {
   const buffers = new Map<string, CaptureBuffer>()
-  const modes = new SessionModeControl('read-write')
+  const modes = new SessionModeControl(config.sessionModeDefault)
   // 启动时把落盘的全局模式读回来（面板 B 的按钮改的就是它）
   void facility.store().then((s) => {
     const saved = s.getState().panelMode
@@ -225,22 +246,13 @@ export function installScheduler(ctx: Context, facility: NexusFacility, config: 
         if (mode !== 'pause' && mode !== 'write-only') {
           const candidate = extractFromTrigger(text, projectRefOf(session))
           if (candidate !== undefined) {
-            const verdict = evaluateHardReject(candidate.statement)
+            const verdict = evaluateHardReject(candidate.statement, { rulesText: rulesTextFor(projectRefOf(session)) })
             if (verdict.reject) {
               await recordReject(ctx, facility, session, verdict.ruleId ?? 'trigger', candidate.statement, config)
             } else {
               const savedAtom = await facility.saveAtom(candidate, { sessionId: String(session.id), projectRef: projectRefOf(session) })
               bumpStat(String(session.id), savedAtom.status === 'pending' ? 'pending' : 'saved')
-              // 价值门影子模式：只记判定不改行为（先看回放证据，再决定是否拦截）
-              try {
-                const gate = assessValue({ statement: candidate.statement, subject: candidate.subject, provenance: candidate.provenance, scope: candidate.scope, kind: candidate.kind })
-                const store = await facility.store()
-                const state = store.getState()
-                const shadow = state.valueGateShadow ?? { accept: 0, review: 0, reject: 0, updatedAt: 0 }
-                await store.setState({ ...state, valueGateShadow: { ...shadow, [gate.verdict]: shadow[gate.verdict] + 1, updatedAt: Date.now() } })
-              } catch (error) {
-                console.warn('nexus: value-gate shadow failed (fail-open)', error)
-              }
+              // 价值门影子计数已移入 Facility.saveAtom：覆盖面 = 全部写入路径（此前只有这一条分支）
             }
           }
         }
@@ -259,6 +271,17 @@ export function installScheduler(ctx: Context, facility: NexusFacility, config: 
         if (TOOL_FAILURE_RE.test(text)) {
           const candidate = extractFromToolFailure('tool', text, projectRefOf(session))
           if (candidate !== undefined && mode !== 'pause') await facility.saveAtom(candidate, { sessionId: String(session.id), projectRef: projectRefOf(session) })
+        }
+      } else if (type === 'goal/change' || type === 'todo/write') {
+        // 确定性通道②：goal/todo 状态事件。
+        // 回归两点：① 这两者 DSH 是作为 **session 事件**（`session/event` 的 `event.type`）发出的，
+        // 不是顶层 cordis 事件 —— 旧实现用 `ctx.on('goal/change')` 挂在错的 bus 上，**从未触发**；
+        // ② 旧实现落库写死 `sessionId: 'host'`，而 episode 记忆只在本会话注入 → 即便触发也永不注入。
+        // 现在两处都修：从 firehose 拿真实 session，并把 projectRef 传给抽取器（有归属则直接是 project 作用域）。
+        const summary = JSON.stringify(data ?? {}).slice(0, 200)
+        const candidate = extractFromStateEvent(type, summary, projectRefOf(session))
+        if (candidate !== undefined && mode !== 'pause') {
+          await facility.saveAtom(candidate, { sessionId: String(session.id), projectRef: projectRefOf(session) })
         }
       }
     } catch (error) {
@@ -489,25 +512,8 @@ export function installScheduler(ctx: Context, facility: NexusFacility, config: 
     console.info('nexus: 会话记忆小结 — 新增 ' + summary.saved + ' 条、待确认 ' + summary.pending + ' 条、跳过 ' + summary.skippedWindows + ' 窗')
   }
 
-  // deterministic capture ②: goal/todo state events (best-effort)
-  for (const eventName of ['goal/change', 'todo/write'] as const) {
-    const onAny = ctx.on as unknown as (name: string, handler: (payload: unknown) => void) => void
-    onAny(eventName, (payload: unknown) => {
-      void handleStateEvent(eventName as string, payload)
-    });
-  }
-
-  async function handleStateEvent(eventName: string, payload: unknown): Promise<void> {
-    try {
-      const summary = JSON.stringify(payload ?? {}).slice(0, 200);
-      const candidate = extractFromStateEvent(eventName, summary);
-      if (candidate !== undefined) {
-        await facility.saveAtom(candidate, { sessionId: 'host', projectRef: undefined })
-      }
-    } catch (error) {
-      console.warn('nexus: state-event capture failed (fail-open)', error)
-    }
-  }
+  // 确定性捕获 ②：goal/todo 状态事件在 handleSessionEvent 里处理（它们走 session/event firehose，
+  // 不是顶层 cordis 事件 —— 见那里的注释）。
 
   return modes;
 }

@@ -1,6 +1,8 @@
 /**
  * Plugin configuration: untrusted loader schema + documented defaults.
- * Mirror of NEXUS-DESIGN.md §8 (default zero-config, ≤8 tunables).
+ * Mirror of NEXUS-DESIGN.md §8 (default zero-config).
+ * 旋钮数量以 `Config` 接口为准（`docs/IMPLEMENTATION-STATUS.md` 的 config-knob-count 探针
+ * 会数它并核对文档 —— 别在这里写死数字，那正是上一版「三处口径 5/8/19」的来源）。
  *
  * @module @chenqiuyushuang/dsh-nexus/config
  */
@@ -9,7 +11,6 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { VectorConfig } from './retriever-vector.ts'
 
-export type NexusMode = 'strict' | 'standard' | 'loose'
 export type ExtractMode = 'deterministic' | 'reminder' | 'off'
 export type SessionMode = 'read-write' | 'write-only' | 'pause'
 
@@ -30,13 +31,11 @@ export interface IntegratorConfig {
 
 /** Loader-visible untrusted configuration. */
 export interface Config {
-  readonly mode?: NexusMode
   readonly indexBudgetBytes?: number
   readonly extract?: ExtractMode
   readonly vector?: boolean | InputVectorConfig
   readonly autoDegradeDays?: number
   readonly pendingMax?: number
-  readonly coldArchive?: boolean
   readonly autoAcceptThreshold?: number
   readonly modelAutoThreshold?: number
   readonly rejectLogMax?: number
@@ -46,6 +45,8 @@ export interface Config {
   readonly projectionDir?: string
   readonly integrator?: IntegratorConfig
   readonly webui?: boolean
+  /** 写入侧安全扫描规则集：minimal（默认基线）| recommended（含文件级危险命令规则）。 */
+  readonly scannerRules?: 'minimal' | 'recommended'
   /** 允许非 loopback 主机访问面板（默认 false；放开后仅做 Origin==Host 精确匹配，不防 DNS rebinding）。 */
   readonly webuiAllowRemote?: boolean
   /** LLM 提炼预算（不配则用默认：每会话 8 窗、每日 20 万输入 token）。 */
@@ -64,13 +65,11 @@ export interface Config {
 
 /** Resolved immutable configuration with defaults. */
 export interface ResolvedConfig {
-  readonly mode: NexusMode
   readonly indexBudgetBytes: number
   readonly extract: ExtractMode
   readonly vector: VectorConfig | false
   readonly autoDegradeDays: number
   readonly pendingMax: number
-  readonly coldArchive: boolean
   readonly autoAcceptThreshold: number
   readonly modelAutoThreshold: number
   readonly rejectLogMax: number
@@ -81,13 +80,13 @@ export interface ResolvedConfig {
   readonly extractorLlm: { readonly provider: string; readonly model: string; readonly maxTokens: number; readonly timeoutMs: number; readonly maxInputBytes: number } | undefined
   readonly integrator: { clusterThreshold: number; minCluster: number; dryRun: boolean } | undefined
   readonly webui: boolean
+  readonly scannerRules: 'minimal' | 'recommended'
   readonly webuiAllowRemote: boolean
   readonly extractBudget: { readonly maxWindowsPerSession: number; readonly maxTokensPerDay: number }
 }
 
 /** Loader schema (schemastery, statically walkable). */
 export const Config: z<Config> = z.object({
-  mode: z.union(['strict', 'standard', 'loose']),
   indexBudgetBytes: z.number().step(1).min(256),
   extract: z.union(['deterministic', 'reminder', 'off']),
   vector: z.union([z.boolean(), z.object({
@@ -99,7 +98,6 @@ export const Config: z<Config> = z.object({
   })]),
   autoDegradeDays: z.number().step(1).min(0),
   pendingMax: z.number().step(1).min(1),
-  coldArchive: z.boolean(),
   autoAcceptThreshold: z.number().min(0).max(1),
   modelAutoThreshold: z.number().min(0).max(1),
   rejectLogMax: z.number().step(1).min(1),
@@ -113,6 +111,7 @@ export const Config: z<Config> = z.object({
     dryRun: z.boolean(),
   }),
   webui: z.boolean(),
+  scannerRules: z.union(['minimal', 'recommended']),
   webuiAllowRemote: z.boolean(),
   extractBudget: z.object({
     maxWindowsPerSession: z.number().step(1).min(1),
@@ -149,13 +148,11 @@ export function resolveConfig(config: Config): ResolvedConfig {
           lazyEncodeLimit: 12,
         }
   return Object.freeze({
-    mode: value.mode ?? 'standard',
     indexBudgetBytes: value.indexBudgetBytes ?? 1024,
     extract: value.extract ?? 'reminder',
     vector,
     autoDegradeDays: value.autoDegradeDays ?? 7,
     pendingMax: value.pendingMax ?? 200,
-    coldArchive: value.coldArchive ?? false,
     autoAcceptThreshold: value.autoAcceptThreshold ?? 0.9,
     modelAutoThreshold: value.modelAutoThreshold ?? 0.95,
     rejectLogMax: value.rejectLogMax ?? 500,
@@ -170,6 +167,7 @@ export function resolveConfig(config: Config): ResolvedConfig {
       dryRun: value.integrator.dryRun ?? true,
     },
     webui: value.webui ?? true,
+    scannerRules: value.scannerRules ?? 'minimal',
     webuiAllowRemote: value.webuiAllowRemote ?? false,
     extractBudget: {
       maxWindowsPerSession: value.extractBudget?.maxWindowsPerSession ?? 8,
