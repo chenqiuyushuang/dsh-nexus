@@ -1,0 +1,2107 @@
+{
+  "_comment": "Nexus 实现状态注册表（唯一事实源）。探针说明见 docs/DOC-MAINTENANCE.md；生成物 docs/IMPLEMENTATION-STATUS.md 由 npm run docs:status 写出，勿手改。",
+  "_probe_kinds": {
+    "symbol-called": "该符号在作用域内是否存在定义之外的调用点（可抓『有实现没接线』）",
+    "text-present": "某文件/作用域是否含该正则",
+    "count": "某文件/作用域内该正则的匹配次数",
+    "file-exists": "该文件是否存在"
+  },
+  "_removed_symbols": {
+    "_comment": "已删除的符号：活文档（README / NEXUS-DESIGN / DOC-MAINTENANCE / V0.5-DESIGN）里再提到它们时，同一行必须带一个豁免词（说明这是在讲历史、回归或已撤销的承诺），否则 npm run docs:check 失败。探针只查代码事实，查不到这种叙述漂移 —— 0.8.9 删掉旧面板入口后 README 的「已知限制」还留着「包内打包了三套面板实现」，就是这么漏的。版本命名的设计文档（docs/V0.x-*.md）是当时的历史记录，故意不扫。 V0.5-DESIGN.md 虽以版本命名，但正文一直挂着 `> 实现状态` 复核标注，属于活文档；其余 V0.x-*.md 是当时的历史记录，不在扫描范围内。",
+    "docs": [
+      "README.md",
+      "docs/NEXUS-DESIGN.md",
+      "docs/DOC-MAINTENANCE.md",
+      "docs/V0.5-DESIGN.md"
+    ],
+    "exempt": [
+      "已删除",
+      "删除",
+      "已撤销",
+      "撤销",
+      "已移除",
+      "移除",
+      "已下线",
+      "不再",
+      "不存在",
+      "没有",
+      "从未",
+      "零消费者",
+      "死旋钮",
+      "历史上",
+      "当年",
+      "曾经",
+      "旧版",
+      "从前",
+      "回归",
+      "教训"
+    ],
+    "symbols": [
+      {
+        "pattern": "\\?panel=(old|sample|replica|default)",
+        "note": "旧面板 / 样例复刻档入口",
+        "cap": "panel-single-impl"
+      },
+      {
+        "pattern": "coldArchive",
+        "note": "冷归档配置（零消费者，已删）",
+        "cap": "lifecycle-cold-archive"
+      },
+      {
+        "pattern": "(?<!lifecycle-)episode[-_ ]?[Tt]tl|EPISODE_TTL",
+        "note": "episode 90 天 TTL 归档",
+        "cap": "lifecycle-episode-ttl"
+      },
+      {
+        "pattern": "deletedAt|status: ?'deleted'",
+        "note": "status:'deleted' 枚举 + deletedAt 字段",
+        "cap": "lifecycle-status-deleted"
+      },
+      {
+        "pattern": "memory_trace",
+        "note": "memory_trace 工具",
+        "cap": "tool-memory-trace"
+      },
+      {
+        "pattern": "dsh-inject-scheduler",
+        "note": "旧注入调度器 seam 与回退",
+        "cap": "contract-inject-scheduler"
+      },
+      {
+        "pattern": "mode: ?'?(strict|standard|loose)",
+        "note": "strict / standard / loose 三模式配置",
+        "cap": "config-mode"
+      },
+      {
+        "pattern": "golden\\.jsonl",
+        "note": "bench/golden.jsonl 金样文件",
+        "cap": "quality-golden-file"
+      }
+    ]
+  },
+  "groups": [
+    "写入与提取",
+    "检索",
+    "注入",
+    "生命周期与删除",
+    "成本与降级",
+    "配置面",
+    "安全",
+    "面板与用户面",
+    "质量门与工程",
+    "事件与宿主契约"
+  ],
+  "capabilities": [
+    {
+      "id": "write-trigger",
+      "group": "写入与提取",
+      "title": "触发词确定性捕获（记住／以后都／习惯是…）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.1",
+      "evidence": "src/extraction.ts:143, src/scheduler.ts:226",
+      "detail": "零 token 直写，user-declared 0.98；问句与「讨论助手记性」的句子会被挡掉",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "extractFromTrigger",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-tool-failure",
+      "group": "写入与提取",
+      "title": "工具失败教训捕获",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.1",
+      "evidence": "src/extraction.ts:177, src/scheduler.ts:257-262",
+      "detail": "无 diff 门控，同一失败重复发生会重复入库",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "extractFromToolFailure",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-state-event",
+      "group": "写入与提取",
+      "title": "goal／todo 状态事件捕获",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.1（确定性通道②）",
+      "evidence": "src/scheduler.ts:257-274",
+      "detail": "已修两处：① 这两个事件 DSH 是作为 session 事件走 session/event firehose 发的，旧实现 ctx.on('goal/change') 挂在错的 bus 上从未触发；② 旧实现落库写死 sessionId='host'，episode 记忆只在本会话注入 → 即便触发也永不注入。现在从 firehose 取真实 session，并把 projectRef 传给抽取器",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/scheduler.ts",
+          "pattern": "type === 'goal/change'",
+          "expect": true
+        },
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "\\{ sessionId: 'host'",
+          "expect": 0
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-llm-reminder",
+      "group": "写入与提取",
+      "title": "LLM 收尾提炼（分窗 + 预算双闸）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.1, V0.5-DESIGN D1/D2",
+      "evidence": "src/scheduler.ts:392-463, src/budget.ts:63-80",
+      "detail": "触发条件是会话 dispose 且 user 消息 ≥2；文档写的「≥3 轮 AND 冷却 AND ≥1 工具」并未实现",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "createLlmExtractor",
+          "expect": true
+        },
+        {
+          "kind": "symbol-called",
+          "symbol": "planWindows",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-reminder-default-off",
+      "group": "写入与提取",
+      "title": "默认零 token：未配置 extractorLlm 即不注册提取器",
+      "status": "implemented",
+      "docs": "README 成本契约",
+      "evidence": "src/index.ts:82-84, src/scheduler.ts:398",
+      "detail": "「extract: reminder」是档位名，LLM 是否真调用取决于 extractorLlm 是否配置",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/index.ts",
+          "pattern": "resolved\\.extractorLlm !== undefined",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-hard-reject",
+      "group": "写入与提取",
+      "title": "硬拒绝规则（文档 5 条）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.1/§5.2",
+      "evidence": "src/extraction.ts:250-300, src/scheduler.ts:280",
+      "detail": "已补齐：临时话题（显式当下性标记，保守判定）与代码可推导（自述来源是仓库文件）两条规则真正返回；rulesText 由 scheduler 从 cwd 的 AGENTS.md/CLAUDE.md 读取并传入（按 cwd 缓存、fail-open）—— 规则文件已有那条不再永不触发。实际只有 `source` 入参仍无生产调用方（外部来源由 textOfUser 在更上游过滤）",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/extraction.ts",
+          "pattern": "ruleId: 'temporary-talk'",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/scheduler.ts",
+          "pattern": "rulesText: rulesTextFor",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/extraction.test.ts",
+          "pattern": "两条规则曾只声明、永不返回",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-reject-log",
+      "group": "写入与提取",
+      "title": "RejectLog 拒收样本",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.1/§5.2",
+      "evidence": "src/facility.ts（logReject）, src/scheduler.ts:recordReject",
+      "detail": "已补齐：扫描器拒收与门控拒收现在也写 RejectLog（此前只有触发词硬拒与用户拒绝两条路径），样本表覆盖写入侧全部拒收",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/facility.ts",
+          "pattern": "async logReject",
+          "expect": true
+        },
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "await this\\.logReject\\(",
+          "expect": 2
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-fp-dedup",
+      "group": "写入与提取",
+      "title": "fp 幂等去重",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.7",
+      "evidence": "src/facility.ts:170-177",
+      "detail": "已实现：saveAtom 先按 fp 查既有记录，命中即返回原记录（幂等 put）。此前 fp 只写不读",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/facility.ts",
+          "pattern": "existing.fp !== verified.fp",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/facility.test.ts",
+          "pattern": "fp 幂等去重",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-pending-cap",
+      "group": "写入与提取",
+      "title": "pending 上限淘汰（pendingMax=200）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.2",
+      "evidence": "src/facility.ts:249-259",
+      "detail": "按 createdAt 淘汰最老；pinned 保护在此路径未被查询",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "prunePending",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-pending-tiers",
+      "group": "写入与提取",
+      "title": "待确认过期（单一 30 天；三档分级已收敛）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.5（已按简化后的口径更正）",
+      "evidence": "src/lifecycle.ts:PENDING_TTL_DAYS, tests/lifecycle.test.ts",
+      "detail": "已实现：pending 超过 30 天由生命周期 tick 归档（reviewNote=pending-expired），pinned 候选豁免。**主动收敛为单一档**：设计稿的三档（14/30/60）需要三份常量与三份解释，当前样本量支撑不起这个精细度 —— 等有真实分布再加档",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/lifecycle.ts",
+          "pattern": "PENDING_TTL_DAYS",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/lifecycle.test.ts",
+          "pattern": "pinned 候选豁免",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-value-gate-shadow",
+      "group": "写入与提取",
+      "title": "价值密度门（影子期：只记录不拦截）",
+      "status": "implemented",
+      "docs": "README 设计要点, V0.9-VALUE-GATE",
+      "evidence": "src/value-gate.ts:53, src/facility.ts（recordValueShadow，saveAtomInner 内）, tests/facility.test.ts",
+      "detail": "打分口径与文档逐项一致。影子计数的覆盖面已修：调用点从 scheduler 的**触发词分支**移进 `Facility.saveAtom`（`recordValueShadow`，在 `buildAtom` 之后、gate/forgetter 分支之前），于是触发词、工具失败、goal/todo、`/memory` 命令、面板新增、导入、集成器八条写入路径全都记到，每条候选只记一次（重复内容在 fp 去重那步就返回，不重复计数；被安全扫描/黑名单拦下的候选不计）。回归背景：此前只有触发词一条路径记，而切换条件写的是「连续 7 天 / reject ≥50 条 / 误拦率 0」——样本只从一条路径来，那两个阈值根本测不到",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "assessValue",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/facility.ts",
+          "pattern": "private async recordValueShadow",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/facility.ts",
+          "pattern": "await this\\.recordValueShadow\\(store, candidate\\)",
+          "expect": true
+        },
+        {
+          "kind": "count",
+          "file": "src/scheduler.ts",
+          "pattern": "valueGateShadow",
+          "expect": 0
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/facility.test.ts",
+          "pattern": "价值门影子计数",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-value-gate-intercept",
+      "group": "写入与提取",
+      "title": "价值门切换为拦截",
+      "status": "missing",
+      "docs": "V0.9-VALUE-GATE「下一步」",
+      "evidence": "无实现",
+      "detail": "仍是纯影子（`assessValue` 只记判定、不改写入行为）。回放证据（2026-09，真实库 34 条）：accept 0 / review 3 / reject 31，被拦的绝大多数是子代理回执与提示词这类历史垃圾，活跃条目里没有误拦 —— 即「误拦率 0」这条达标，但样本量与观察期（连续 7 天）都不够，且样本本身以垃圾为主",
+      "probes": [
+        {
+          "kind": "count",
+          "file": "src/scheduler.ts",
+          "pattern": "\\.verdict === 'reject'",
+          "expect": 0
+        }
+      ],
+      "disposition": "defer",
+      "rationale": "按设计要等「连续 7 天、reject ≥50 条、误拦率 0」才切换。0.8.9 起影子计数已覆盖全部写入路径（见 write-value-gate-shadow），但样本量仍远未达标：当前库里 34 条、其中 29 条是历史垃圾，`scripts/value-gate-replay.mjs` 回放为 accept 0 / review 3 / reject 31。结论：先攒真实写入样本，再谈切换"
+    },
+    {
+      "id": "write-scanner",
+      "group": "写入与提取",
+      "title": "写入侧安全扫描（提示注入／密钥／身份证／危险指令）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.2, README 安全",
+      "evidence": "src/scanner.ts:24-60, src/index.ts:78",
+      "detail": "命中即拒、不落盘；缺 PEM／OpenSSH 私钥专用规则",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "createScanner",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "write-noise-filter",
+      "group": "写入与提取",
+      "title": "子代理回执／提示词识别",
+      "status": "implemented",
+      "docs": "README 一键清理",
+      "evidence": "src/noise.ts:12,19,26",
+      "detail": "用于写入拦截与面板「一键清理」横幅",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "isLikelySubagentNoise",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "retrieval-text",
+      "group": "检索",
+      "title": "默认文本检索（文档称 BM25）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §2.1/§5.4（已改为「文本检索」）",
+      "evidence": "src/text.ts:148-164, src/retriever-text.ts:126-152",
+      "detail": "已对齐：设计稿不再称其为 BM25。实际算法是加权重叠 + IDF 稀有度因子（无 tf 饱和、无长度归一）",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "默认文本检索",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "retrieval-weighting",
+      "group": "检索",
+      "title": "标题 2.5× 加权 + cues 命中加权",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.4",
+      "evidence": "src/text.ts:153-155",
+      "detail": "subject 命中 +2.5，cues 命中 +1.5，statement +1",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/text.ts",
+          "pattern": "hits \\+= 2\\.5",
+          "expect": true
+        },
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "cues\\.some",
+          "expect": 2
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "retrieval-cache",
+      "group": "检索",
+      "title": "epoch 感知查询缓存（1 小时桶 + 库版本入键）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.4",
+      "evidence": "src/retriever-text.ts:22-47",
+      "detail": "库版本入键是后续修复，避免写入后 1 小时内仍返回旧结果",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "QueryCache",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "retrieval-vector",
+      "group": "检索",
+      "title": "向量检索 + RRF 融合（默认关）",
+      "status": "partial",
+      "docs": "NEXUS-DESIGN §5.4, V0.9-SURFACE-AUDIT",
+      "evidence": "src/retriever-vector.ts, src/config.ts:137-150",
+      "detail": "代码完整但本部署从未配置外部 embedding 服务；V0.9 审计列为「建议删，待决定」",
+      "probes": [
+        {
+          "kind": "file-exists",
+          "path": "src/retriever-vector.ts",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/config.ts",
+          "pattern": "lazyEncodeLimit",
+          "expect": true
+        }
+      ],
+      "disposition": "defer",
+      "rationale": "V0.9-SURFACE-AUDIT 已列为待决定（删或留）"
+    },
+    {
+      "id": "retrieval-holdout-gate",
+      "group": "检索",
+      "title": "holdout 检索质量门禁",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.4/§11（已对齐）",
+      "evidence": "bench/holdout.ts:75, bench/bench.test.ts:9",
+      "detail": "已对齐：文档写明门槛 0.8、只有召回命中一个指标、端到端完成度未做；§5.4 与 §11 的矛盾已消除",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "Top-5 ≥ 0\\.8",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "retrieval-search-cap",
+      "group": "检索",
+      "title": "memory_search 单次 ≤1.5KB",
+      "status": "implemented",
+      "docs": "V0.5-DESIGN D3",
+      "evidence": "src/tools.ts:88-104",
+      "detail": "逐条截断 statement + 总量封顶，超出的条数会显式提示",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/tools.ts",
+          "pattern": "const budget = 1536",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "inject-frozen-index",
+      "group": "注入",
+      "title": "会话冻结索引注入（## 记忆）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.3",
+      "evidence": "src/scheduler.ts:294-348, src/projection.ts:51-67",
+      "detail": "按字节预算逐条判定，单条超预算直接跳过不截断",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "buildInjectionText",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "inject-throttle",
+      "group": "注入",
+      "title": "注入节流：指纹 + 跨轮 + injectIntervalMs",
+      "status": "implemented",
+      "docs": "README 成本契约",
+      "evidence": "src/scheduler.ts:319-328",
+      "detail": "修掉了「每 15s 重复注入同一块」的旧缺陷",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/scheduler.ts",
+          "pattern": "config\\.injectIntervalMs > 0",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "inject-compaction-reinject",
+      "group": "注入",
+      "title": "上下文压缩后重新注入",
+      "status": "implemented",
+      "docs": "README:79",
+      "evidence": "src/scheduler.ts:138-140, :247-249",
+      "detail": "监听 compaction/end 与 compaction/prune",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "shouldReinjectAfterCompaction",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "inject-conflict-tail",
+      "group": "注入",
+      "title": "冲突尾行轻量提示",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.3.1",
+      "evidence": "src/scheduler.ts:87",
+      "detail": "被动可见、零打断，符合评审折中方案",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/scheduler.ts",
+          "pattern": "条冲突记忆待裁决",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "inject-line-format",
+      "group": "注入",
+      "title": "索引行格式（★ / [slot] / subject：statement / （weight））",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.3",
+      "evidence": "src/atom.ts:179-186",
+      "detail": "主语与正文重复时只打印一次",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "renderIndexLine",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "inject-usage-header",
+      "group": "注入",
+      "title": "用量表头 [n% — x/y chars]",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.3",
+      "evidence": "src/projection.ts:42-45",
+      "detail": "MEMORY.md / USER.md 各自也带一行表头",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "renderUsageHeader",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "inject-line-cap",
+      "group": "注入",
+      "title": "索引 ≤200 行截断（已撤销）",
+      "status": "removed",
+      "docs": "NEXUS-DESIGN §5.3",
+      "evidence": "src/projection.ts:51-67",
+      "detail": "🗑️ 承诺撤销：字节预算已是更强约束（1KB 下不可能到 200 行）。文档已改为「只有字节预算，没有行数上限」",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "只有字节预算，没有行数上限",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "inject-truth-reasons",
+      "group": "注入",
+      "title": "注入真相：六个未进入原因",
+      "status": "implemented",
+      "docs": "README:45",
+      "evidence": "src/injection-truth.ts:20,146",
+      "detail": "枚举与文档一一对应；但「一键修法」只在旧面板（见面板组）",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/injection-truth.ts",
+          "pattern": "'oversize' \\| 'budget'",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "inject-data-instruction-separation",
+      "group": "注入",
+      "title": "数据与指令分离声明 + NFKC 扁平化",
+      "status": "implemented",
+      "docs": "V0.5-DESIGN D5",
+      "evidence": "src/scheduler.ts:83, src/atom.ts:162-170",
+      "detail": "行/段分隔符、零宽与双向控制符全部折叠，防伪造段头",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "flattenIndexText",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "lifecycle-decay",
+      "group": "生命周期与删除",
+      "title": "权重衰减（30 天 −1，下限 1）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.5",
+      "evidence": "src/lifecycle.ts:37-70, src/facility.ts:128-160",
+      "detail": "已修：`NexusFacility` 的写入路径（saveAtom / review）会驱动 tick，模块内 6 小时节流、无后台定时器。此前 runLifecycle 全仓零调用点 → 衰减从未执行",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "runLifecycle",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "lifecycle-episode-ttl",
+      "group": "生命周期与删除",
+      "title": "episode 90 天 TTL 归档（已撤销）",
+      "status": "removed",
+      "docs": "NEXUS-DESIGN §5.5 未提及；与「active 永不受时间影响」冲突",
+      "evidence": "src/lifecycle.ts（TTL 分支已删除）, tests/lifecycle.test.ts",
+      "detail": "已按 Q2 撤销承诺并删除代码：它按时间归档 active 记忆，与 §5.5「已确认的 active 记忆永不受时间影响——有效期只由冲突与人工裁决驱动」直接冲突，也贴近 §12 反目标「时间衰减判失效」。回归测试断言 900 天前的 episode 记忆仍是 active",
+      "probes": [
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "EPISODE_TTL_DAYS",
+          "expect": 0
+        },
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "reviewNote: 'episode-ttl'",
+          "expect": 0
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "lifecycle-recall-prune",
+      "group": "生命周期与删除",
+      "title": "recall 账本裁剪",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.5",
+      "evidence": "src/facility.ts:285, src/store.ts:147-153",
+      "detail": "走的是 facility 路径（上限 2000），不是 lifecycle 路径",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "pruneRecalls",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "lifecycle-trash-restore",
+      "group": "生命周期与删除",
+      "title": "回收站与恢复",
+      "status": "implemented",
+      "docs": "README:49, V0.5-DESIGN D4（已按实际表示法更正）",
+      "evidence": "src/web-ui.ts:316-333, src/ui/MemoryRow.tsx:147",
+      "detail": "已对齐：文档记录实际表示法 archived + reviewNote='user-deleted'（不采用 D4 设计的 status: deleted），并写明入口只在面板",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/V0.5-DESIGN.md",
+          "pattern": "reviewNote: 'user-deleted'",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "lifecycle-purge",
+      "group": "生命周期与删除",
+      "title": "彻底清除（真删 + 清边）",
+      "status": "implemented",
+      "docs": "README:49",
+      "evidence": "src/web-ui.ts:287-310, src/commands.ts:128-138",
+      "detail": "彻底清除（真删 + 清边）在面板回收站实现且只对用户移入回收站的条目生效；/memory purge 的语义已改为如实说明「归档可回溯，彻底清除在面板回收站」，不再与 README 的三态删除混淆",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/commands.ts",
+          "pattern": "彻底清除在面板回收站",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "lifecycle-status-deleted",
+      "group": "生命周期与删除",
+      "title": "status:'deleted' + deletedAt 状态（已撤销）",
+      "status": "removed",
+      "docs": "V0.5-DESIGN D4",
+      "evidence": "src/atom.ts:52",
+      "detail": "🗑️ 承诺撤销：现有 5 态枚举 + reviewNote 已实现同等语义，为对齐 D4 而改枚举属纯迁移成本",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/V0.5-DESIGN.md",
+          "pattern": "没有 `status: deleted`",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "lifecycle-trash-ttl",
+      "group": "生命周期与删除",
+      "title": "回收站 7 天自动清除",
+      "status": "removed",
+      "docs": "V0.5-DESIGN D4",
+      "evidence": "无实现",
+      "detail": "不做了。回收站现有的两段式（归档 → 回收站 → 彻底清除）加面板二次确认已经够，而时间驱动的自动清除不可逆 —— 与「删除可回溯」这条不可动摇的约束直接冲突。按 Q2（与原则冲突 → 两边一起删）撤销该承诺：V0.5-DESIGN D4 与本条都标注为已撤销，不再作为待办。",
+      "probes": [
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "trashTtl|TRASH_TTL",
+          "expect": 0
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "lifecycle-cold-archive",
+      "group": "生命周期与删除",
+      "title": "coldArchive 归档冷迁移（已删除）",
+      "status": "removed",
+      "docs": "NEXUS-DESIGN §5.5/§8/§16",
+      "evidence": "src/config.ts（键已移除）",
+      "detail": "🗑️ 按 Q3 删除：该键被解析后无任何消费者，冷迁移代码也不存在。已从 Config schema、ResolvedConfig 与文档移除；旧配置里带着它仍能加载（schemastery 透传未知键）",
+      "probes": [
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "coldArchive",
+          "expect": 0
+        },
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "均已删除",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "lifecycle-tombstone",
+      "group": "生命周期与删除",
+      "title": "归档即黑名单（同句不再复活）",
+      "status": "implemented",
+      "docs": "V0.5-DESIGN D4（已按实际口径更正）",
+      "evidence": "src/facility.ts:142-150, :304-310",
+      "detail": "已对齐：文档记录实际口径 —— 按归一化 statement 比对（不是 fp），且只有 user-reject 墓碑会拦",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/V0.5-DESIGN.md",
+          "pattern": "按归一化 statement 比对而不是 `fp`",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "lifecycle-active-immortal",
+      "group": "生命周期与删除",
+      "title": "「已确认 active 记忆永不受时间影响」",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.5",
+      "evidence": "src/lifecycle.ts:1-15, tests/lifecycle.test.ts",
+      "detail": "已成立：episode TTL 删除后，没有任何按时间归档 active 记忆的路径（权重衰减只动 weight，不判失效）",
+      "probes": [
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "reviewNote: 'episode-ttl'",
+          "expect": 0
+        },
+        {
+          "kind": "text-present",
+          "file": "src/lifecycle.ts",
+          "pattern": "已删除",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "cost-ledger",
+      "group": "成本与降级",
+      "title": "成本账本（inject／extract／encode 分类）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.6",
+      "evidence": "src/cost.ts:10-26, src/scheduler.ts:332, :443-447",
+      "detail": "提炼的输出侧也记账（此前恒 0 是已修缺陷）",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "summarizeCosts",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "cost-auto-degrade",
+      "group": "成本与降级",
+      "title": "7 天零使用自动降级为只写不读",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.6, README 成本契约",
+      "evidence": "src/cost.ts:32-47, src/scheduler.ts:303-309",
+      "detail": "判定基准是最近一次「命中」优先、否则任意 recall 记录；降级只暂停注入并 console.warn 一次",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "shouldAutoDegrade",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "cost-extract-budget",
+      "group": "成本与降级",
+      "title": "提炼预算：每会话 ≤8 窗、每日 ≤20 万 token",
+      "status": "implemented",
+      "docs": "V0.5-DESIGN 成本契约",
+      "evidence": "src/budget.ts:21-25,63-80, src/config.ts:174-177",
+      "detail": "超限窗口计入 skippedWindows 并在会话小结里显示；在途预留防并发越闸",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "reserveExtractionBudget",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "cost-session-mode",
+      "group": "成本与降级",
+      "title": "会话三态（read-write / write-only / pause）",
+      "status": "implemented",
+      "docs": "README:77",
+      "evidence": "src/scheduler.ts:55-68, src/commands.ts:184-193",
+      "detail": "面板三按钮改的是全局默认，/memory session 改的是会话覆盖",
+      "probes": [
+        {
+          "kind": "symbol-called",
+          "symbol": "panelToSessionMode",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "cost-session-default-config",
+      "group": "成本与降级",
+      "title": "sessionModeDefault 配置项",
+      "status": "implemented",
+      "docs": "README:77",
+      "evidence": "src/scheduler.ts:164",
+      "detail": "已修：SessionModeControl 的默认值改读 config.sessionModeDefault（此前硬编码 read-write，配置永不生效）",
+      "probes": [
+        {
+          "kind": "count",
+          "scope": "src-except-config",
+          "pattern": "\\.sessionModeDefault\\b",
+          "expect": 1
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "config-cost-contract",
+      "group": "配置面",
+      "title": "成本契约默认值（1024 B / 15000 ms / 7 天 / 200）",
+      "status": "implemented",
+      "docs": "README 成本契约表",
+      "evidence": "src/config.ts:153-162",
+      "detail": "与 README 表格逐项一致",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/config.ts",
+          "pattern": "indexBudgetBytes: value\\.indexBudgetBytes \\?\\? 1024",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/config.ts",
+          "pattern": "injectIntervalMs: value\\.injectIntervalMs \\?\\? 15000",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/config.ts",
+          "pattern": "autoDegradeDays: value\\.autoDegradeDays \\?\\? 7",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/config.ts",
+          "pattern": "pendingMax: value\\.pendingMax \\?\\? 200",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "config-mode",
+      "group": "配置面",
+      "title": "mode: strict | standard | loose 三模式（已删除）",
+      "status": "removed",
+      "docs": "NEXUS-DESIGN §8「三模式差异」",
+      "evidence": "src/config.ts（NexusMode 与 schema 键已移除）",
+      "detail": "🗑️ 按 Q3 删除：零行为分支，只被解析并打进启动日志；三模式矩阵正是 §12 反目标排斥的复杂度。已从类型、schema、ResolvedConfig、启动日志与文档一并移除",
+      "probes": [
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "NexusMode",
+          "expect": 0
+        },
+        {
+          "kind": "count",
+          "scope": "src-except-config",
+          "pattern": "'strict'|'loose'",
+          "expect": 0
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "config-scanner-rules",
+      "group": "配置面",
+      "title": "scannerRules: minimal | recommended",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §8/§15",
+      "evidence": "src/config.ts:47,104,175, src/index.ts:78",
+      "detail": "已修：scannerRules 进入 Config schema（默认 minimal），createScanner 读它 —— RECOMMENDED_RULES 不再是运行时不可达的死规则集",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/config.ts",
+          "pattern": "scannerRules",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/index.ts",
+          "pattern": "createScanner\\(resolved\\.scannerRules\\)",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/scanner.test.ts",
+          "pattern": "recommended 覆盖 minimal",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "config-edges",
+      "group": "配置面",
+      "title": "edges: { provenance, cooccurrence, semantic } 配置（已删除）",
+      "status": "removed",
+      "docs": "NEXUS-DESIGN §8",
+      "evidence": "src/config.ts（该键从未进入 schema）",
+      "detail": "🗑️ 该键从未进过 Config schema，文档里的承诺已删除（边功能整体仍待决，先不留空旋钮）",
+      "probes": [
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "readonly edges",
+          "expect": 0
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "config-knob-count",
+      "group": "配置面",
+      "title": "可调旋钮数量的三处口径",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §8（不再写死数字）",
+      "evidence": "src/config.ts Config 接口；探针即事实源",
+      "detail": "已对齐：三处口径收敛为一处 —— §8 标题去掉「≤5 项」、config.ts 注释不再写死数字，实际数量由本探针数并核对（当前 18；mode 与 coldArchive 已按 Q3 删除）",
+      "probes": [
+        {
+          "kind": "count",
+          "file": "src/config.ts",
+          "pattern": "\\n  readonly \\w+\\?:",
+          "between": [
+            "export interface Config {",
+            "/** Resolved immutable configuration"
+          ],
+          "expect": 18
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "config-integrator",
+      "group": "配置面",
+      "title": "integrator 聚类配置（默认 dry-run）",
+      "status": "partial",
+      "docs": "NEXUS-DESIGN §11, V0.9-SURFACE-AUDIT",
+      "evidence": "src/config.ts:167-171, src/commands.ts:116",
+      "detail": "可触发（/memory integrate）但从未执行、零测试；V0.9 审计列为待决定项",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/config.ts",
+          "pattern": "clusterThreshold: value\\.integrator",
+          "expect": true
+        }
+      ],
+      "disposition": "defer",
+      "rationale": "V0.9-SURFACE-AUDIT 已列为待决定"
+    },
+    {
+      "id": "cmd-skill-compile",
+      "group": "面板与用户面",
+      "title": "/memory skill-compile：生成 SKILL.md 草稿",
+      "status": "partial",
+      "docs": "V0.9-SURFACE-AUDIT",
+      "evidence": "src/skill-compiler.ts, src/commands.ts:212, src/config.ts 无对应旋钮",
+      "detail": "命令接线完整（`/memory skill-compile [minWeight]` → `compileSkills(store, projectionDir/skills.draft, minWeight)`），但**从未执行**：`~/.dsh/nexus/` 下没有 `skills.draft/`，且 61 行代码零测试引用（见生成物「零测试引用的模块」）。决定（2026-09）：与 integrator 一起**保留**，标注为「记忆 → 技能」的待用方向 —— 删代码可逆（git），放弃方向不可逆；但零测试意味着它不算「已上线」，不上线就不许进任何「已实现」叙事。",
+      "probes": [
+        {
+          "kind": "file-exists",
+          "path": "src/skill-compiler.ts",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/commands.ts",
+          "pattern": "case 'skill-compile'",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/commands.ts",
+          "pattern": "compileSkills",
+          "expect": true
+        }
+      ],
+      "disposition": "defer",
+      "rationale": "「记忆 → 技能」是待用方向而非欠债：保留实现与命令，明确标注零使用/零测试，不补测试也不删。等这个方向真的要做时再补测试与实测（届时它才算上线）"
+    },
+    {
+      "id": "sec-write-origin",
+      "group": "安全",
+      "title": "写操作 Origin == Host 精确匹配",
+      "status": "implemented",
+      "docs": "V0.5-DESIGN D5, README 安全",
+      "evidence": "src/web-ui.ts:417-433, :74-80",
+      "detail": "所有 mutation 路由都走 guardWrite，失败 403",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/web-ui.ts",
+          "pattern": "parsed\\.host !== host",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "sec-read-loopback",
+      "group": "安全",
+      "title": "读操作要求 loopback Host",
+      "status": "implemented",
+      "docs": "V0.5-DESIGN D5, README 安全",
+      "evidence": "src/web-ui.ts:408, :360-367",
+      "detail": "已修：/nexus/api/settings 与 /nexus/api/models 补上 guardRead —— 此前这两个端点完全没有守卫，任意 Host/Origin 可读阈值与 extractor 配置",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/web-ui.ts",
+          "pattern": "LOOPBACK_HOST_RE",
+          "expect": true
+        },
+        {
+          "kind": "count",
+          "file": "src/web-ui.ts",
+          "pattern": "async \\(_req, res\\)",
+          "expect": 0
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/web-ui.test.ts",
+          "pattern": "settings 与 models 同样要求 loopback",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "sec-remote-default",
+      "group": "安全",
+      "title": "远程访问默认禁止（webuiAllowRemote）",
+      "status": "implemented",
+      "docs": "V0.5-DESIGN D5",
+      "evidence": "src/config.ts:173, src/index.ts:100",
+      "detail": "放开后仍只对 mutation 做 Origin==Host",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/config.ts",
+          "pattern": "webuiAllowRemote: value\\.webuiAllowRemote \\?\\? false",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "sec-dir-perms",
+      "group": "安全",
+      "title": "存储目录 0700 / 文件 0600 / .gitignore",
+      "status": "implemented",
+      "docs": "V0.5-DESIGN D5, README 安全（已区分两类存储）",
+      "evidence": "src/projection.ts:97-124",
+      "detail": "已对齐：README 明确 0700/0600/.gitignore 只覆盖投影目录，并说明原子库权限归宿主",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "README.md",
+          "pattern": "两类存储，位置与权限不同",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "sec-atom-store-location",
+      "group": "安全",
+      "title": "原子库自身的权限与位置",
+      "status": "implemented",
+      "docs": "README 安全（已更正）",
+      "evidence": "src/store.ts:100-113, README.md 安全节",
+      "detail": "已对齐：README 不再把投影目录说成记忆存放处，明确原子库走宿主 storage-domain、路径与权限不由本插件保证",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "README.md",
+          "pattern": "路径与文件权限由宿主决定",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-single-impl",
+      "group": "面板与用户面",
+      "title": "单一实现：面板只有一份构建产物与一套实现",
+      "status": "implemented",
+      "docs": "README:66",
+      "evidence": "src/ui/index.tsx, scripts/build.mjs, lib/nexus-ui.js",
+      "detail": "已实现：0.6 的 NexusPanel 与样例复刻档 SamplePanel 连同其专属依赖（InjectionBar / MemoryRow / RefLayout / ScopeBar / components / keyboard / replica.css / sample-palette.css）与 7 个测试文件一并删除，?panel=old / ?panel=sample 路由移除，index.tsx 里旧面板的 .nx-app/.nx-list 死分支清掉，theme.css 里 145 个旧面板类（43 KB → 8.7 KB）也一并清空。面板 HTML 从 348 KB 降到 223 KB，bundle 从 254 KB 降到 186 KB",
+      "probes": [
+        {
+          "kind": "count",
+          "file": "src/ui/index.tsx",
+          "pattern": "which ===",
+          "expect": 0
+        },
+        {
+          "kind": "count",
+          "file": "src/ui/index.tsx",
+          "pattern": "querySelector\\('\\.nx-app'",
+          "expect": 0
+        },
+        {
+          "kind": "count",
+          "file": "src/ui/theme.css",
+          "pattern": "\\.nx-",
+          "expect": 0
+        },
+        {
+          "kind": "file-exists",
+          "path": "src/ui/NexusPanel.tsx",
+          "expect": false
+        },
+        {
+          "kind": "file-exists",
+          "path": "src/ui/SamplePanel.tsx",
+          "expect": false
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-custom-select",
+      "group": "面板与用户面",
+      "title": "下拉筛选是自绘弹层，不再是原生 <select>",
+      "status": "implemented",
+      "docs": "README:63",
+      "evidence": "src/ui/Select.tsx, src/ui/BPanel.tsx, scripts/panel-select-shot.mjs, tests/panel-b.test.ts, tests/contrast-b-panel.test.ts",
+      "detail": "已实现：状态筛选 / 作用域筛选 / 提炼模型三处下拉换成 Select.tsx（button + 自绘列表）。原生 <select> 的弹层是系统菜单，macOS 亮色模式下就是一张白底 NSMenu —— CSS 够不着，color-scheme: dark 也只在部分平台生效；另外原生 select 的宽度由最长选项决定，同样 padding 下雪佛龙与文字的间距时宽时窄（「全部状态」空一截、「全部作用域」几乎贴住），一排两个控件不像一套。自绘后触发器与 --bg-input/--border/--radius 同一套语言；弹层 position: fixed 逃出 .panel-body 的滚动裁剪，两轮实测定位：下方放不下整张列表且上方更宽裕时翻到触发器上面，越出右边缘时右边缘对齐触发器；键盘 ↑↓ Home End Enter Space Esc Tab，role=combobox/listbox/option。0.8.10 只做到 appearance:none + 自绘雪佛龙，用户复看后反馈仍不搭 —— 露馅的正是够不着的弹层",
+      "probes": [
+        {
+          "kind": "file-exists",
+          "path": "src/ui/Select.tsx",
+          "expect": true
+        },
+        {
+          "kind": "count",
+          "file": "src/ui/BPanel.tsx",
+          "pattern": "<select",
+          "expect": 0
+        },
+        {
+          "kind": "text-present",
+          "file": "src/ui/BPanel.tsx",
+          "pattern": "from '\\./Select\\.tsx'",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/ui/b-panel.css",
+          "pattern": "\\.nx-b \\.sel-pop \\{",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/ui/b-panel.css",
+          "pattern": "\\.sel-opt\\[data-active=\"true\"\\]",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/panel-b.test.ts",
+          "pattern": "下拉是自绘弹层",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-default-b",
+      "group": "面板与用户面",
+      "title": "默认面板为 BPanel",
+      "status": "implemented",
+      "docs": "V0.8-PANEL-B",
+      "evidence": "src/ui/index.tsx:49",
+      "detail": "默认面板是 BPanel（src/ui/index.tsx 只渲染 <BPanel />）。0.8.9 起 ?panel=old / ?panel=sample 两个入口与两套旧面板已一并删除（见 panel-single-impl）—— 本条此前写的「三份并存，确认后再删」是那次删除之前的旧状态，已过期。",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/ui/index.tsx",
+          "pattern": "<BPanel />",
+          "expect": true
+        },
+        {
+          "kind": "count",
+          "file": "src/ui/index.tsx",
+          "pattern": "get\\('panel'\\)|panel\"\\)",
+          "expect": 0
+        },
+        {
+          "kind": "text-present",
+          "file": "src/ui/index.tsx",
+          "pattern": "不再有 \\?panel= 路由",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-one-click-fix",
+      "group": "面板与用户面",
+      "title": "注入真相的逐条一键修法（缩短／置顶／指派项目／改为跨项目／确认）",
+      "status": "implemented",
+      "docs": "README:45",
+      "evidence": "src/ui/BPanel.tsx（quickFix / FIX_LABEL）, tests/panel-b.test.ts",
+      "detail": "已移植到默认面板：按未进入原因给对症动作 —— oversize/budget → 缩短（取全文后按预算 60% 截断）、unknown-project/other-project → 指派到当前项目、inactive → 确认。此前这些入口只在 ?panel=old 有，默认面板的记忆「没有出路」",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/ui/BPanel.tsx",
+          "pattern": "const quickFix = async",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/ui/BPanel.tsx",
+          "pattern": "'指派到当前项目'",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/panel-b.test.ts",
+          "pattern": "逐条一键修法",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-byte-sort",
+      "group": "面板与用户面",
+      "title": "注入条目按字节降序",
+      "status": "implemented",
+      "docs": "README:46（已标注面板归属）",
+      "evidence": "src/projection.ts:35-39, src/ui/InjectionBar.tsx:188",
+      "detail": "已对齐：README 写明运行时注入顺序是 pinned → weight → 最近更新，「按字节降序」只属于旧面板",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "README.md",
+          "pattern": "运行时注入顺序是 pinned",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-30pct-highlight",
+      "group": "面板与用户面",
+      "title": "单条 ≥30% 预算高亮 + 就地缩短",
+      "status": "implemented",
+      "docs": "README:46（已更正颜色与面板归属）",
+      "evidence": "src/ui/BPanel.tsx:455, src/ui/b-panel.css:171",
+      "detail": "已对齐：README 写明高亮是橙色、「就地缩短」仅旧面板",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "README.md",
+          "pattern": "高亮（橙色）",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-today-line",
+      "group": "面板与用户面",
+      "title": "可信度闭环（今日写入 · 待确认 · 拒收 · 注入次数）",
+      "status": "implemented",
+      "docs": "README:47（已标注仅旧面板）",
+      "evidence": "src/today.ts:50-53, src/ui/BPanel.tsx:645-653",
+      "detail": "已对齐：README 说明一行式仅旧面板，默认面板是设置页「运行状态」的四行",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "README.md",
+          "pattern": "设置页「运行状态」给出今日写入",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-cost-view",
+      "group": "面板与用户面",
+      "title": "面板展示成本",
+      "status": "implemented",
+      "docs": "README:50",
+      "evidence": "src/ui/BPanel.tsx（设置页成本明细）, tests/panel-b.test.ts",
+      "detail": "已移植到默认面板：设置页「运行状态」下新增成本明细三行（注入 / 提炼 / 编码）。/nexus/api/state 一直在返回 cost，只是默认面板从不渲染",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/ui/BPanel.tsx",
+          "pattern": "成本 · 注入",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/ui/BPanel.tsx",
+          "pattern": "state\\?\\.cost\\?\\.extract",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/panel-b.test.ts",
+          "pattern": "显示成本明细",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-one-click-clean",
+      "group": "面板与用户面",
+      "title": "一键清理误写记忆 + 5 秒可撤销",
+      "status": "implemented",
+      "docs": "README:48",
+      "evidence": "src/ui/BPanel.tsx:196, :423-432, src/facility.ts:304-310",
+      "detail": "归档同时写黑名单，撤销走 restore {any:true}",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/ui/BPanel.tsx",
+          "pattern": "2200 : 5000",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-fallback-page",
+      "group": "面板与用户面",
+      "title": "产物缺失时的诚实说明页",
+      "status": "implemented",
+      "docs": "README:66",
+      "evidence": "src/web-ui.ts:484-486",
+      "detail": "已修：兜底页不再指向 0.4.1 就已删除的 web/nexus.html，改为 lib/nexus.html",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/web-ui.ts",
+          "pattern": "静态面板未随包分发（lib/nexus\\.html",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "cmd-list",
+      "group": "面板与用户面",
+      "title": "15 个 /memory 子命令",
+      "status": "implemented",
+      "docs": "README:55-56",
+      "evidence": "src/commands.ts:54-193",
+      "detail": "list/search/show/edit/delete/confirm/reject/conflict/import/integrate/skill-compile/purge/doctor/cost/session 全部注册（本轮新增 edit 与 delete）",
+      "probes": [
+        {
+          "kind": "count",
+          "file": "src/commands.ts",
+          "pattern": "case '",
+          "expect": 15
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "cmd-edit-delete",
+      "group": "面板与用户面",
+      "title": "/memory edit 与 /memory delete",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §7",
+      "evidence": "src/commands.ts（case edit / case delete）, tests/commands.test.ts",
+      "detail": "已实现：`/memory edit <id> <新陈述>`（重算指纹与线索，撞指纹则拒绝保存）与 `/memory delete <id...>`（走回收站路径，与面板同一条：归档 + user-deleted）",
+      "probes": [
+        {
+          "kind": "count",
+          "file": "src/commands.ts",
+          "pattern": "case 'edit'|case 'delete'",
+          "expect": 2
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/commands.test.ts",
+          "pattern": "edit 改陈述并重算指纹与线索",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "cmd-conflict-triage",
+      "group": "面板与用户面",
+      "title": "冲突一键三选（保留新／保留旧／两条都要）+ 批量",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §7/§10-13",
+      "evidence": "src/commands.ts:resolveConflicts, tests/commands.test.ts",
+      "detail": "已实现一键三选 + 批量：keep-new（新转 active、旧转 superseded 并留指针）/ keep-old（新归档 + 写墓碑）/ keep-both（两条都留、清冲突标记），支持 `--all`",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/commands.ts",
+          "pattern": "async function resolveConflicts",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/commands.test.ts",
+          "pattern": "--all 批量裁决",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "cmd-reject-reason",
+      "group": "面板与用户面",
+      "title": "reject 的可选原因参数",
+      "status": "implemented",
+      "docs": "README:55",
+      "evidence": "src/commands.ts:90-100",
+      "detail": "已修：按 nex_ 前缀区分 id 与原因，原因不再被当成 id 吞掉，也不再恒为 'user rejected via command'",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/commands.ts",
+          "pattern": "part.startsWith\\('nex_'\\)",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "cmd-doctor-writable",
+      "group": "面板与用户面",
+      "title": "/memory doctor 的「✖ 不可写」结论",
+      "status": "implemented",
+      "docs": "README:59",
+      "evidence": "src/store.ts:198-209, src/commands.ts:170",
+      "detail": "已修：storeWritable 走真实写探测（把当前状态原样写回，不产生脏数据）—— 只读探测证明不了可写；✖ 分支现在可达",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/commands.ts",
+          "pattern": "storeWritable: await store\\.probeWritable\\(\\)",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/store.ts",
+          "pattern": "async probeWritable",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "tool-list",
+      "group": "面板与用户面",
+      "title": "模型面工具清单",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §7（已列入第五个工具）",
+      "evidence": "src/tools.ts:36,62,73,109,128",
+      "detail": "已对齐：§7 工具清单补齐 memory_feedback 并说明其 good/bad 语义",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "`memory_feedback`",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "tool-feedback-kind",
+      "group": "面板与用户面",
+      "title": "memory_feedback 的 good／bad 分支",
+      "status": "implemented",
+      "docs": "工具自带描述「good 提升权重，bad 降低权重（下限 1）」",
+      "evidence": "src/tools.ts:127-151, tests/tools.test.ts",
+      "detail": "已修：kind 真正参与分支 —— good 加权并刷新 updatedAt（视作一次「被用到」）；bad 降权且**不刷新**时间（纠正不是使用，刷新反而会让它在注入排序里往前挤）。权重夹在 1..20",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/tools.ts",
+          "pattern": "args\\.kind !== 'bad'",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/tools.test.ts",
+          "pattern": "kind: 'bad'",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "tool-read-active-only",
+      "group": "面板与用户面",
+      "title": "memory_read 默认只读 active",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §7",
+      "evidence": "src/tools.ts:memory_read, tests/tools.test.ts",
+      "detail": "已实现：默认只读 active（非 active 给出带 trace 提示的说明），`trace: true` 沿 supersedes/supersededBy 双向走完整 lineage（有环与长度保护）",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/tools.ts",
+          "pattern": "默认不可读",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/tools.test.ts",
+          "pattern": "沿指针走完整 lineage",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "tool-memory-trace",
+      "group": "面板与用户面",
+      "title": "memory_trace(id) 工具（已撤销）",
+      "status": "removed",
+      "docs": "NEXUS-DESIGN §5.5",
+      "evidence": "src/tools.ts（无该工具）",
+      "detail": "🗑️ 承诺撤销：独立工具不存在，能力并入 memory_read 的指针字段（supersedes / supersededBy）",
+      "probes": [
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "memory_trace",
+          "expect": 0
+        },
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "双向走完整链",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "quality-golden-file",
+      "group": "质量门与工程",
+      "title": "bench/golden.jsonl 112 条（已撤销）",
+      "status": "removed",
+      "docs": "V0.5-DESIGN D6",
+      "evidence": "tests/golden.test.ts 内联 22 例",
+      "detail": "🗑️ 承诺撤销：实际是内联用例（12 条 bug 复现 + 泛化 + 负例，共 22 例，其中 5 例 it.fails）。补到 112 条的成本高于收益，文档已写明实际形态",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/V0.5-DESIGN.md",
+          "pattern": "文件不存在",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "quality-ci-layers",
+      "group": "质量门与工程",
+      "title": "CI 两层 L0/L1（已撤销）",
+      "status": "removed",
+      "docs": "V0.5-DESIGN D6",
+      "evidence": ".github/workflows/ci.yml",
+      "detail": "🗑️ 承诺撤销：CI 仍是单 job（typecheck / test / build / docs:check / check:pack）。L1 回放需要持久化模型输出夹具，明确不做",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/V0.5-DESIGN.md",
+          "pattern": "CI 没有 L0/L1 两层",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "quality-metric-lines",
+      "group": "质量门与工程",
+      "title": "写入质量指标线（9 条收敛为 3 条可测）",
+      "status": "implemented",
+      "docs": "V0.5-DESIGN D6（已按可测性收敛）",
+      "evidence": "tests/golden.test.ts（P / 误记率 / scope）, bench/holdout.ts（Recall@5）",
+      "detail": "已收敛：**9 条里只保留有数据源的**。现在 CI 强制 4 条 —— 写入精确率 P≥0.9、误记率≤2%、scope≥0.98（均由金标集算，见 tests/golden.test.ts）与检索 Recall@5（bench/holdout 门槛 0.8）。其余 5 条（残留、MRR、假阳、注入命中、每会话次数）**没有数据源，已从文档删除**，不再当门面",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "tests/golden.test.ts",
+          "pattern": "写入质量指标线",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/golden.test.ts",
+          "pattern": "误记率 ≤ 2%",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "docs/V0.5-DESIGN.md",
+          "pattern": "没有数据源，已删除",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "quality-check-pack",
+      "group": "质量门与工程",
+      "title": "包体门禁（白名单／必需文件／逐字节一致／体积上限）",
+      "status": "implemented",
+      "docs": "README 开发与工具, package.json",
+      "evidence": "scripts/check-pack.mjs:22-55, .github/workflows/ci.yml:23-24",
+      "detail": "四项都在，CI 会跑",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "scripts/check-pack.mjs",
+          "pattern": "512 \\* 1024",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "quality-pre-commit",
+      "group": "质量门与工程",
+      "title": "pre-commit 路径硬拦截",
+      "status": "implemented",
+      "docs": "README:99",
+      "evidence": ".githooks/pre-commit:11-13",
+      "detail": "按路径/扩展名拦截，无内容扫描；--no-verify 可绕过（已在注释说明）",
+      "probes": [
+        {
+          "kind": "file-exists",
+          "path": ".githooks/pre-commit",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "quality-anti-dead",
+      "group": "质量门与工程",
+      "title": "反死机制：每条机制必须有指标 + 回归测试",
+      "status": "implemented",
+      "docs": "README:85, V0.5-DESIGN §一.4（已如实写明）",
+      "evidence": "scripts/docs-status.mjs（untestedModules 现算 + 叙述门禁），docs/status.json",
+      "detail": "已对齐：死代码只剩 linkCluster（src/edges.ts，全仓零调用点）—— runLifecycle 已在 0.8.9 接到 Facility.tickLifecycle，README 里「当前被自身代码违反」的旧表述随之作废；「零测试引用的模块」不再写死数字，由 docs-status.mjs 现算并写进生成物的独立小节（README 只指向它）。防复发由 docs:check 门禁承担（CI + pre-commit），叙述门禁另拦「活文档把已删除的符号当现有功能」。",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "README.md",
+          "pattern": "零测试引用的模块",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "README.md",
+          "pattern": "linkCluster",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "scripts/docs-status.mjs",
+          "pattern": "function untestedModules",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "scripts/docs-status.mjs",
+          "pattern": "function verifyNarrative",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "quality-value-replay",
+      "group": "质量门与工程",
+      "title": "价值门回放脚本作为回归",
+      "status": "implemented",
+      "docs": "V0.9-VALUE-GATE, README:94",
+      "evidence": "tests/value-gate.test.ts（混淆矩阵回放）",
+      "detail": "已补：混淆矩阵回放进入 CI（按线上库真实分布生成 22 回执 + 7 提示词 + 4 真记忆，断言垃圾 100% 拦下、真记忆零误拦、总数 29/33）。**误拦率 0 就是切换为拦截的前置条件**，所以这条测试同时守住那道门槛。手动脚本 scripts/value-gate-replay.mjs 保留为「对真实库跑」的便利工具，但不再是唯一的回放手段",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "tests/value-gate.test.ts",
+          "pattern": "混淆矩阵回放（CI 回归）",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/value-gate.test.ts",
+          "pattern": "误拦率必须为 0",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "events-emitted",
+      "group": "事件与宿主契约",
+      "title": "文档声明的 11 个事件",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §6（已按实际 7 个事件重写）",
+      "evidence": "src/events.ts, src/facility.ts",
+      "detail": "已对齐：§6 只列实际 emit 的 7 个；6 个从未 emit 的已从清单移除，并注明其中 5 个连类型声明都没有（尚未设计）",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "实际 emit 的是这 7 个",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "events-recalled",
+      "group": "事件与宿主契约",
+      "title": "nexus/memory/recalled 事件",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §6（已补入）",
+      "evidence": "src/facility.ts:288, src/events.ts:28",
+      "detail": "已对齐：nexus/memory/recalled 已进入 §6 清单",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "nexus/memory/recalled`、`nexus/degraded",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "contract-inject-scheduler",
+      "group": "事件与宿主契约",
+      "title": "dsh-inject-scheduler 探测与回退（已撤销）",
+      "status": "removed",
+      "docs": "NEXUS-DESIGN §5.7",
+      "evidence": "src/degrade.ts, src/scheduler.ts",
+      "detail": "🗑️ 承诺撤销：该 seam 在本仓库宿主版本里不存在，`agent/pre-step` 是唯一注入路径，「回退」无对象。§2.4 与 §5.7 的相应条款已删除",
+      "probes": [
+        {
+          "kind": "count",
+          "scope": "src",
+          "pattern": "inject-scheduler",
+          "expect": 0
+        },
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "该行承诺已撤销",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "contract-degraded-event",
+      "group": "事件与宿主契约",
+      "title": "每个 seam 降级都发 nexus/degraded 事件",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.7（已记录实际行为）",
+      "evidence": "src/degrade.ts:30-38",
+      "detail": "已对齐：文档写明只有一个启动期聚合事件，cwd 与 sessionProjections 降级只 console.warn，并声明「以本行为准」",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "每个 seam 一条告警",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "contract-migration",
+      "group": "事件与宿主契约",
+      "title": "Schema 迁移：compatibleVersions + 逐版脚本 + 迁移前备份",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.7（已记录实际范围）",
+      "evidence": "src/migrate.ts:11,49-91, src/store.ts:61-69",
+      "detail": "已对齐：文档写明实际范围是「域 version + 拒绝更高版本 + 幂等清扫游标」，compatibleVersions/逐版脚本/迁移前备份明确未实现",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "幂等清扫游标",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "contract-dirty-bit",
+      "group": "事件与宿主契约",
+      "title": "投影／写入失败置脏位并重试（决定不做）",
+      "status": "removed",
+      "docs": "NEXUS-DESIGN §5.7",
+      "evidence": "src/index.ts:127-129, src/commands.ts:170",
+      "detail": "🗑️ 决定不做：写入 fail-open、崩溃最多丢当前一条已在设计取舍内。文档已明确写出这一点，并说明 storeWritable 已改为真实写探测",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "docs/NEXUS-DESIGN.md",
+          "pattern": "决定不做",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-assign-project",
+      "group": "面板与用户面",
+      "title": "面板指派项目归属（编辑与新增都回传 projectRef）",
+      "status": "implemented",
+      "docs": "README:45（一键修法·指派项目）, NEXUS-DESIGN §7",
+      "evidence": "src/ui/BPanel.tsx:309-330, :768-786, src/web-ui.ts:245-256",
+      "detail": "「归属未知」的项目记忆永不注入。此前改作用域为「本项目」也不补 projectRef（服务端沿用旧值 undefined），新建更是恒写 undefined —— 这类记忆在默认面板里没有出路。现在两处都回传，且面板无从得知归属时明确提示而不是静默保存",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/ui/BPanel.tsx",
+          "pattern": "payload\\.projectRef = projectRef",
+          "expect": true
+        },
+        {
+          "kind": "count",
+          "file": "src/web-ui.ts",
+          "pattern": "projectRef: undefined",
+          "expect": 0
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/web-ui.test.ts",
+          "pattern": "新增记忆可带项目归属",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "extract-question-shape",
+      "group": "写入与提取",
+      "title": "问句形态判定（结尾「么」不再一律当问句）",
+      "status": "implemented",
+      "docs": "NEXUS-DESIGN §5.1（模糊句硬拒）",
+      "evidence": "src/extraction.ts:QUESTION_RE, tests/extraction.test.ts, tests/golden.test.ts",
+      "detail": "本轮修批次 5 时实测发现：语气词类原为 [吗呢么]，于是**任何以「么」结尾的陈述句**都被判为问句 —— 「提交信息要用中文说明改了什么」这类正常约定会被 ambiguous-sentence 拦掉，并连带让排在后面的「规则文件已有」对一整类句子不可达。金标集里的 xf-03（A-16）早已登记此缺陷，现已转正",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/extraction.ts",
+          "pattern": "\\[吗呢\\]\\[？\\?\\]\\?",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/extraction.test.ts",
+          "pattern": "以「么」结尾的陈述句不再被误判为问句",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "panel-merge-duplicates",
+      "group": "面板与用户面",
+      "title": "手动合并近义重复",
+      "status": "implemented",
+      "docs": "README:50",
+      "evidence": "src/ui/BPanel.tsx（库详情「合并重复」）, src/web-ui.ts:/nexus/api/memory/merge, tests/panel-b.test.ts",
+      "detail": "已补：库详情栏对 reviewNote=suspected-duplicate 的条目给出「合并重复」按钮，调用既有 /nexus/api/memory/merge（keep=被怀疑的那条，drop=当前这条 → 当前这条转 superseded，可 trace 回溯）。检测逻辑与后端接口一直都在，缺的只是入口",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/ui/BPanel.tsx",
+          "pattern": "合并重复",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/ui/BPanel.tsx",
+          "pattern": "'/nexus/api/memory/merge'",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/panel-b.test.ts",
+          "pattern": "删旧面板时丢过一回",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    },
+    {
+      "id": "noise-scan-scope",
+      "group": "面板与用户面",
+      "title": "噪声横幅的扫描范围（非 active 的垃圾也要能被发现）",
+      "status": "implemented",
+      "docs": "README:50（一键清理）",
+      "evidence": "src/web-ui.ts:/nexus/api/state, src/commands.ts:doctor, tests/web-ui.test.ts",
+      "detail": "本轮**用真实浏览器验收时发现并修掉**的缺陷：`collectNoise` 此前只接收 `active` 记忆，而垃圾常常正躺在 pending / needs-review 里 —— 实测本机 34 条库中 29 条是垃圾，27 条已归档、**2 条卡在 needs-review**，于是横幅计数为 0、一键清理入口不出现，用户反而会在归因页看到邀请他点「确认」的垃圾卡片。现改为扫描所有非 archived/superseded 的记忆，面板与 `/memory doctor` 同口径",
+      "probes": [
+        {
+          "kind": "text-present",
+          "file": "src/web-ui.ts",
+          "pattern": "collectNoise\\(all\\.filter",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "src/commands.ts",
+          "pattern": "collectNoise\\(atoms\\.filter",
+          "expect": true
+        },
+        {
+          "kind": "text-present",
+          "file": "tests/web-ui.test.ts",
+          "pattern": "噪声扫描覆盖非 active 的垃圾",
+          "expect": true
+        }
+      ],
+      "disposition": "keep"
+    }
+  ],
+  "_dispositions": {
+    "keep": "保持现状：文档与实现一致，无需动作",
+    "fix-code": "改代码：按文档（或按设计意图）把实现补齐 / 接线 / 修缺陷",
+    "fix-docs": "改文档：承认现状，把承诺降级为与代码一致的表述",
+    "delete": "删：删掉代码、配置项或文档承诺（与原则冲突、无消费者、或纯多余）",
+    "defer": "推迟：保留但明确标注为「未做」，并写明触发条件"
+  }
+}

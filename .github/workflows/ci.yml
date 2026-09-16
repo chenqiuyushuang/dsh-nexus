@@ -16,6 +16,10 @@ jobs:
         run: npm run typecheck
       - name: unit + golden regression
         run: npm test
+      # 文档状态门禁：docs/status.json 的能力声明必须与代码事实一致，
+      # 且 docs/IMPLEMENTATION-STATUS.md 与注册表同步 —— 防止文档再次落后于实现
+      - name: docs status gate (registry vs code)
+        run: npm run docs:check
       - name: build (lib/index.js + lib/client.js + panel)
         run: npm run build
       # 包体门禁：内容与当前构建逐字节一致、无源码/测试/截图泄露、无构建中间产物、体积上限
